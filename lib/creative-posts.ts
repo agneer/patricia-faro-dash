@@ -1,9 +1,10 @@
-// Resolve o link do post de cada anúncio automaticamente pela Meta (via Pipeboard),
-// pra que TODO criativo novo que entrar no dash já venha com o botão "post↗" —
-// sem precisar cadastrar à mão. O `creative-links.json` continua existindo como
-// camada de override (ex.: apontar um criativo pro Instagram); ele vence o automático.
+// Resolve o link do post de cada anúncio. Fonte principal: o mapa colhido do Windsor
+// pelo cron (POST_LINKS no dataset) — funciona em dashboard só-Windsor, sem Pipeboard.
+// Se houver PIPEBOARD_API_TOKEN, o Pipeboard complementa/atualiza; e o `creative-links.json`
+// continua como camada de override manual (vence os dois).
 import { unstable_cache } from "next/cache";
 import { CONFIG, META_ACCOUNT_IDS } from "./config";
+import { POST_LINKS } from "./snapshot";
 import MANUAL from "./creative-links.json";
 
 const ENDPOINT = "https://meta-ads.mcp.pipeboard.co/";
@@ -59,7 +60,7 @@ async function buildPostLinks(): Promise<Record<string, string>> {
     const url = postUrlOf(ad.tracking_specs);
     if (url) auto[ad.name] = url;
   }
-  return { ...auto, ...manual };
+  return { ...POST_LINKS, ...auto, ...manual };
 }
 
 // Cacheado (POST não cacheia no fetch): criativos mudam pouco, então 30 min.

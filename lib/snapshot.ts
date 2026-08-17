@@ -59,3 +59,8 @@ export const CREATIVES: CreativeRow[] = (rows as number[][]).map((r) => ({
 }));
 
 export const ALL_DATES: string[] = [...dates].sort();
+
+// Mapa anúncio → URL do post, colhido do Windsor pelo cron (campos permalink).
+// Serve criativos com o botão "post↗" sem depender do Pipeboard (dashboard só-Windsor).
+export const POST_LINKS: Record<string, string> =
+  ((dataset as { postLinks?: Record<string, string> }).postLinks) ?? {};

@@ -15,12 +15,20 @@ const FIELDS = [
   "date", "account_id", "ad_name", "campaign", "adset_name", "spend", "impressions", "clicks", "link_clicks",
   "actions_offsite_conversion_fb_pixel_purchase", "action_values_offsite_conversion_fb_pixel_purchase",
   "actions_offsite_conversion_fb_pixel_initiate_checkout", "actions_landing_page_view",
+  // Links do post do criativo (botão "post↗"), sem depender do Pipeboard.
+  "effective_object_story_id", "instagram_permalink_url",
 ];
+
+// object_story_id = "<pageid>_<postid>" → URL pública do post no Facebook.
+function fbPostUrl(objectStoryId: string): string {
+  const [page, post] = objectStoryId.split("_");
+  return page && post ? `https://www.facebook.com/${page}/posts/${post}` : "";
+}
 
 const today = () => new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10); // ~BRT date
 const addDays = (iso: string, n: number) => new Date(Date.parse(iso) + n * 86400000).toISOString().slice(0, 10);
 
-async function fetchWindsor(from: string, to: string): Promise<RawRow[]> {
+async function fetchWindsor(from: string, to: string): Promise<{ rows: RawRow[]; links: Record<string, string> }> {
   const key = process.env.WINDSOR_API_KEY;
   if (!key) throw new Error("WINDSOR_API_KEY ausente");
   const url = new URL("https://connectors.windsor.ai/facebook");
@@ -32,14 +40,29 @@ async function fetchWindsor(from: string, to: string): Promise<RawRow[]> {
   if (!res.ok) throw new Error(`Windsor ${res.status}`);
   const json = await res.json();
   const data: Record<string, unknown>[] = json.data ?? json.result ?? [];
-  return data
-    .filter((r) => ACCOUNT_IDS.has(String(r.account_id)) && IS_LOW_TICKET.test(String(r.campaign ?? "")))
-    .map((r) => ({
-      date: String(r.date), ad: String(r.ad_name ?? "—"), campaign: String(r.campaign ?? "—"), adset: String(r.adset_name ?? "—"),
-      spend: +(r.spend ?? 0), impressions: +(r.impressions ?? 0), clicks: +(r.clicks ?? 0), link_clicks: +(r.link_clicks ?? 0),
-      purchases: +(r.actions_offsite_conversion_fb_pixel_purchase ?? 0), value: +(r.action_values_offsite_conversion_fb_pixel_purchase ?? 0),
-      checkout: +(r.actions_offsite_conversion_fb_pixel_initiate_checkout ?? 0), lpv: +(r.actions_landing_page_view ?? 0),
-    }));
+  const kept = data.filter((r) => ACCOUNT_IDS.has(String(r.account_id)) && IS_LOW_TICKET.test(String(r.campaign ?? "")));
+
+  // Mapa anúncio → URL do post. Instagram vence Facebook (criativos são do IG);
+  // por nome de anúncio (é como o dashboard agrupa os criativos).
+  const links: Record<string, string> = {};
+  for (const r of kept) {
+    const ad = String(r.ad_name ?? "");
+    if (!ad || ad === "—") continue;
+    const ig = r.instagram_permalink_url ? String(r.instagram_permalink_url) : "";
+    const fb = r.effective_object_story_id ? fbPostUrl(String(r.effective_object_story_id)) : "";
+    const url2 = ig || fb;
+    if (!url2) continue;
+    const cur = links[ad];
+    if (!cur || (ig && !cur.includes("instagram.com"))) links[ad] = url2;
+  }
+
+  const rows = kept.map((r) => ({
+    date: String(r.date), ad: String(r.ad_name ?? "—"), campaign: String(r.campaign ?? "—"), adset: String(r.adset_name ?? "—"),
+    spend: +(r.spend ?? 0), impressions: +(r.impressions ?? 0), clicks: +(r.clicks ?? 0), link_clicks: +(r.link_clicks ?? 0),
+    purchases: +(r.actions_offsite_conversion_fb_pixel_purchase ?? 0), value: +(r.action_values_offsite_conversion_fb_pixel_purchase ?? 0),
+    checkout: +(r.actions_offsite_conversion_fb_pixel_initiate_checkout ?? 0), lpv: +(r.actions_landing_page_view ?? 0),
+  }));
+  return { rows, links };
 }
 
 // Commit the new dataset.json to GitHub → triggers Vercel auto-deploy.
@@ -91,20 +114,23 @@ export async function GET(req: NextRequest) {
     // ?days=N permite um pull mais fundo (ex.: semear o histórico de uma conta nova).
     const days = Math.min(Math.max(Number(req.nextUrl.searchParams.get("days")) || REFRESH_DAYS, 1), 400);
     const from = addDays(to, -(days - 1));
-    const fresh = await fetchWindsor(from, to);
+    const { rows: fresh, links } = await fetchWindsor(from, to);
     if (!fresh.length) return NextResponse.json({ ok: false, error: "Windsor não retornou linhas LOW TICKET" }, { status: 502 });
 
     const existing = expand(bundled as CompactDataset);
     // Keep the full history (campaign started 2026-01-06); 400-day window is a safe cap.
     const merged = mergeRecent(existing, fresh, 400, to);
     const next = build(merged, (bundled as CompactDataset).account);
+    // Acumula os links de post: preserva os já conhecidos e sobrescreve com os novos
+    // desta janela (criativo pode mudar de post). Assim o mapa cobre todo o histórico.
+    next.postLinks = { ...((bundled as CompactDataset).postLinks ?? {}), ...links };
 
     await commitToGitHub(JSON.stringify(next) + "\n");
 
     return NextResponse.json({
       ok: true,
       refreshed: { from, to, freshRows: fresh.length },
-      dataset: { from: next.generatedFrom, to: next.generatedTo, rows: next.rows.length, days: next.daily.length },
+      dataset: { from: next.generatedFrom, to: next.generatedTo, rows: next.rows.length, days: next.daily.length, postLinks: Object.keys(next.postLinks ?? {}).length },
     });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e instanceof Error ? e.message : e) }, { status: 500 });

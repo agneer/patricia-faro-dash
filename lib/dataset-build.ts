@@ -17,6 +17,9 @@ export type CompactDataset = {
   adsets: string[];
   rows: number[][];
   daily: { date: string; spend: number; impressions: number; clicks: number; link_clicks: number; purchases: number; value: number; checkout: number; lpv: number }[];
+  // Mapa anúncio → URL do post (colhido do Windsor pelo cron). Opcional: datasets
+  // antigos não têm; o cron acumula/atualiza a cada refresh.
+  postLinks?: Record<string, string>;
 };
 
 const r2 = (n: unknown) => Math.round((Number(n) || 0) * 100) / 100;

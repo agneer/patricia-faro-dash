@@ -15,7 +15,14 @@ async function probe(url: string, init?: RequestInit): Promise<{ status: string;
     try { body = JSON.parse(text); } catch { body = undefined; }
     return { status: String(r.status), ms: Date.now() - t0, body };
   } catch (e) {
-    return { status: `erro: ${e instanceof Error ? e.name : "falha"}`, ms: Date.now() - t0 };
+    // Nunca devolve e.message cru: no erro de header inválido ele contém o valor da chave.
+    const msg = e instanceof Error ? e.message : "";
+    const code = (e as { cause?: { code?: string } })?.cause?.code;
+    const kind = /invalid header|header value/i.test(msg)
+      ? "chave com caractere inválido (quebra de linha/espaço/aspas coladas?)"
+      : code === "ENOTFOUND" ? "domínio não existe (URL errada ou projeto apagado)"
+      : code ?? (e instanceof Error ? e.name : "falha");
+    return { status: `erro: ${kind}`, ms: Date.now() - t0 };
   }
 }
 

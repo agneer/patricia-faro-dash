@@ -10,6 +10,7 @@ export const maxDuration = 300;
 const ACCOUNT_IDS = new Set(META_ACCOUNT_IDS);
 const IS_LOW_TICKET = CAMPAIGN_FILTER;
 const REFRESH_DAYS = 7; // re-pull the last N days (catches corrections + new days)
+const CATCHUP_DAYS = 21; // tamanho do bloco de autorrecuperação quando o snapshot está atrasado
 
 const FIELDS = [
   "date", "account_id", "ad_name", "campaign", "adset_name", "spend", "impressions", "clicks", "link_clicks",
@@ -110,14 +111,29 @@ export async function GET(req: NextRequest) {
   if (!authorized) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
 
   try {
-    const to = today();
-    // Autorrecuperação: se o cron ficou parado e o snapshot está velho, puxa desde
-    // o último dia salvo (não só 7 dias) — o buraco se fecha na próxima execução.
+    // Janela do pull:
+    //  - ?days=N → últimos N dias até hoje (forçado, ex.: semear conta nova);
+    //  - snapshot em dia → últimos REFRESH_DAYS dias (pega correções);
+    //  - snapshot atrasado (cron ficou parado) → autorrecuperação em blocos de
+    //    CATCHUP_DAYS a partir do último dia salvo. O Windsor é lento (~20s/dia de
+    //    dados da agência), então puxar tudo de uma vez estouraria os 300s da função.
+    //    Cada execução (+ redeploy) avança um bloco até alcançar hoje.
+    const now = today();
     const lastSnap = (bundled as CompactDataset).generatedTo;
-    const gap = lastSnap ? Math.round((Date.parse(to) - Date.parse(lastSnap)) / 86400000) + 1 : REFRESH_DAYS;
-    // ?days=N força um pull mais fundo (ex.: semear o histórico de uma conta nova).
-    const days = Math.min(Math.max(Number(req.nextUrl.searchParams.get("days")) || Math.max(REFRESH_DAYS, gap), 1), 400);
-    const from = addDays(to, -(days - 1));
+    const forced = Number(req.nextUrl.searchParams.get("days"));
+    const lagDays = lastSnap ? Math.round((Date.parse(now) - Date.parse(lastSnap)) / 86400000) : 0;
+    let from: string, to: string;
+    if (forced) {
+      to = now;
+      from = addDays(to, -(Math.min(Math.max(forced, 1), 400) - 1));
+    } else if (lagDays > REFRESH_DAYS) {
+      from = lastSnap;
+      const end = addDays(lastSnap, CATCHUP_DAYS - 1);
+      to = end < now ? end : now;
+    } else {
+      to = now;
+      from = addDays(to, -(REFRESH_DAYS - 1));
+    }
     const { rows: fresh, links } = await fetchWindsor(from, to);
     if (!fresh.length) {
       console.error(`[cron] Windsor sem linhas LOW TICKET (${from} → ${to})`);
@@ -137,6 +153,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       refreshed: { from, to, freshRows: fresh.length },
+      // true = ainda há atraso: a próxima execução (após o redeploy) puxa o bloco seguinte.
+      catchUpPendente: to < now,
       dataset: { from: next.generatedFrom, to: next.generatedTo, rows: next.rows.length, days: next.daily.length, postLinks: Object.keys(next.postLinks ?? {}).length },
     });
   } catch (e) {

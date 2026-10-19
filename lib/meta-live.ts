@@ -1,11 +1,17 @@
-// Real-time current-day spend via Pipeboard (direct line to the Meta Marketing
-// API). Overlays today's live numbers on top of the cron snapshot — fixes the
-// Windsor lag for the running day. No token set → returns [] (snapshot only).
+// Gasto direto da Meta Marketing API (Graph API), SEM Windsor: todo o histórico do
+// escopo, por dia e por anúncio, de TODAS as contas (META_ACCOUNT_IDS). O que a Meta
+// devolve substitui o snapshot (dataset.json) — o snapshot vira só reserva se o token
+// faltar ou a Meta falhar. Sem META_ACCESS_TOKEN → [] (fica só o snapshot).
 import { unstable_cache } from "next/cache";
-import { CONFIG, CAMPAIGN_FILTER } from "./config";
-import type { CreativeRow } from "./snapshot";
+import { CAMPAIGN_FILTER, META_ACCOUNT_IDS } from "./config";
+import { ALL_DATES, type CreativeRow } from "./snapshot";
 
-const ENDPOINT = "https://meta-ads.mcp.pipeboard.co/";
+// Versão da Graph API (sobrescreve com META_API_VERSION se a Meta descontinuar).
+const API_VERSION = process.env.META_API_VERSION ?? "v23.0";
+// Campos de insight (date_start/date_stop já voltam sempre — não vão em fields).
+const FIELDS = "ad_name,campaign_name,adset_name,spend,impressions,clicks,actions,action_values";
+// Janelas de 30 dias: evita o erro "reduce the amount of data" da Meta em períodos longos.
+const CHUNK_DAYS = 30;
 
 type MetaAction = { action_type: string; value: string };
 type MetaInsight = {
@@ -15,49 +21,52 @@ type MetaInsight = {
 };
 
 const pick = (arr: MetaAction[] | undefined, type: string) => Number(arr?.find((a) => a.action_type === type)?.value ?? 0);
+const brtToday = () => new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+const addDays = (iso: string, n: number) => new Date(Date.parse(iso) + n * 86400000).toISOString().slice(0, 10);
 
-async function callPipeboard(args: Record<string, unknown>): Promise<MetaInsight[] | null> {
-  const token = process.env.PIPEBOARD_API_TOKEN;
+// Uma janela [since, until] de uma conta, seguindo a paginação. null = falhou e os
+// dias dessa janela caem no snapshot (sem derrubar as outras janelas/contas).
+async function fetchWindow(accountId: string, since: string, until: string): Promise<MetaInsight[] | null> {
+  const token = process.env.META_ACCESS_TOKEN;
   if (!token) return null;
   try {
-    const res = await fetch(ENDPOINT, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "get_insights", arguments: args } }),
-      signal: AbortSignal.timeout(8_000),
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    const text = json?.result?.content?.[0]?.text;
-    if (!text) return null;
-    return (JSON.parse(text).data ?? []) as MetaInsight[];
-  } catch {
+    const url = new URL(`https://graph.facebook.com/${API_VERSION}/act_${accountId}/insights`);
+    url.searchParams.set("level", "ad");
+    url.searchParams.set("time_increment", "1");
+    url.searchParams.set("fields", FIELDS);
+    url.searchParams.set("time_range", JSON.stringify({ since, until }));
+    url.searchParams.set("limit", "500");
+    url.searchParams.set("access_token", token);
+    const out: MetaInsight[] = [];
+    let next: string | undefined = url.toString();
+    while (next) {
+      const res: Response = await fetch(next, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+      if (!res.ok) {
+        console.error(`[meta] ${accountId} ${since}→${until} HTTP ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`);
+        return null;
+      }
+      const json = await res.json();
+      out.push(...((json.data ?? []) as MetaInsight[]));
+      next = json.paging?.next;
+    }
+    return out;
+  } catch (e) {
+    console.error(`[meta] ${accountId} ${since}→${until} falhou:`, e);
     return null;
   }
 }
 
-// Live creatives (ad-level) for the last few days, straight from Meta via Pipeboard.
-// Windsor (snapshot) lags on recent days AND só entra no dataset no refresh diário,
-// então cobrimos os últimos LIVE_DAYS ao vivo: hoje/ontem por preset e os dias
-// anteriores por range de 1 dia (since=until — o time_increment do Pipeboard não
-// quebra por dia, mas consulta de 1 dia funciona). Cada dia é uma chamada isolada:
-// falha em um dia não derruba os outros; falha total cai no snapshot.
-const LIVE_DAYS = 4;
-const brtDay = (n: number) => new Date(Date.now() - 3 * 3600 * 1000 - n * 86400000).toISOString().slice(0, 10);
-
-async function fetchLiveRecent(): Promise<CreativeRow[]> {
-  const acct = `act_${CONFIG.metaAccountId}`;
-  const calls: Promise<MetaInsight[] | null>[] = [
-    callPipeboard({ object_id: acct, time_range: "today", level: "ad", limit: 500 }),
-    callPipeboard({ object_id: acct, time_range: "yesterday", level: "ad", limit: 500 }),
-  ];
-  for (let n = 2; n < LIVE_DAYS; n++) {
-    const day = brtDay(n);
-    calls.push(callPipeboard({ object_id: acct, time_range: { since: day, until: day }, level: "ad", limit: 500 }));
+async function fetchAllCreatives(): Promise<CreativeRow[]> {
+  if (!process.env.META_ACCESS_TOKEN) return [];
+  const end = brtToday();
+  const start = ALL_DATES[0] ?? addDays(end, -89);
+  const windows: [string, string][] = [];
+  for (let s = start; s <= end; s = addDays(s, CHUNK_DAYS)) {
+    const e = addDays(s, CHUNK_DAYS - 1);
+    windows.push([s, e < end ? e : end]);
   }
-  const results = await Promise.all(calls);
-  const rows = results.flatMap((r) => r ?? []);
-  if (!rows.length) return [];
+  const calls = META_ACCOUNT_IDS.flatMap((acct) => windows.map(([s, e]) => fetchWindow(acct, s, e)));
+  const rows = (await Promise.all(calls)).flatMap((r) => r ?? []);
   return rows
     .filter((r) => CAMPAIGN_FILTER.test(r.campaign_name ?? "") && Number(r.spend ?? 0) > 0)
     .map((r) => ({
@@ -76,11 +85,10 @@ async function fetchLiveRecent(): Promise<CreativeRow[]> {
     }));
 }
 
-// Cacheado no servidor (unstable_cache funciona em POST, ao contrário do fetch
-// revalidate): todas as renders/filtros dentro de 90s reusam o mesmo resultado
-// ao vivo, em vez de refazer as chamadas ao Pipeboard a cada troca de filtro.
-export const getLiveRecentCreatives = unstable_cache(
-  fetchLiveRecent,
-  ["live-recent-creatives", CONFIG.metaAccountId],
-  { revalidate: 90 },
+// Cacheado no servidor por 2 min: todas as renders/filtros (inclusive o período
+// anterior, usado nos comparativos) reusam a mesma consulta à Meta.
+export const getMetaCreatives = unstable_cache(
+  fetchAllCreatives,
+  ["meta-creatives", META_ACCOUNT_IDS.join(",")],
+  { revalidate: 120 },
 );

@@ -1,71 +1,62 @@
-// Resolve o link do post de cada anúncio. Fonte principal: o mapa colhido do Windsor
-// pelo cron (POST_LINKS no dataset) — funciona em dashboard só-Windsor, sem Pipeboard.
-// Se houver PIPEBOARD_API_TOKEN, o Pipeboard complementa/atualiza; e o `creative-links.json`
-// continua como camada de override manual (vence os dois).
+// Link do post de cada anúncio (botão "post↗"), direto da Meta Marketing API: o
+// criativo de cada anúncio traz `instagram_permalink_url` e `effective_object_story_id`
+// (→ facebook.com/<page>/posts/<post>). Todo criativo novo já entra com link.
+// Base = mapa do dataset (reserva sem token); `creative-links.json` = override manual (vence).
 import { unstable_cache } from "next/cache";
-import { CONFIG, META_ACCOUNT_IDS } from "./config";
+import { META_ACCOUNT_IDS } from "./config";
 import { POST_LINKS } from "./snapshot";
 import MANUAL from "./creative-links.json";
 
-const ENDPOINT = "https://meta-ads.mcp.pipeboard.co/";
+const API_VERSION = process.env.META_API_VERSION ?? "v23.0";
 
-type TrackingSpec = Record<string, string[]>;
-type Ad = { name?: string; tracking_specs?: TrackingSpec[] };
+type Ad = { name?: string; creative?: { effective_object_story_id?: string; instagram_permalink_url?: string } };
 
-// O post id vem nos tracking_specs do anúncio (post_engagement / link_click):
-//   { "action.type": ["post_engagement"], "page": ["<pageid>"], "post": ["<postid>"] }
-// → https://www.facebook.com/<pageid>/posts/<postid>
-function postUrlOf(specs?: TrackingSpec[]): string | null {
-  for (const s of specs ?? []) {
-    const post = s["post"]?.[0];
-    const page = s["post.wall"]?.[0] ?? s["page"]?.[0];
-    if (post && page) return `https://www.facebook.com/${page}/posts/${post}`;
-  }
-  return null;
+// Instagram vence Facebook (os criativos são do IG).
+function postUrlOf(ad: Ad): string | null {
+  const ig = ad.creative?.instagram_permalink_url;
+  if (ig) return ig;
+  const [page, post] = (ad.creative?.effective_object_story_id ?? "").split("_");
+  return page && post ? `https://www.facebook.com/${page}/posts/${post}` : null;
 }
 
-async function fetchAds(accountId: string): Promise<Ad[] | null> {
-  const token = process.env.PIPEBOARD_API_TOKEN;
-  if (!token) return null;
+async function fetchAds(accountId: string): Promise<Ad[]> {
+  const token = process.env.META_ACCESS_TOKEN;
+  if (!token) return [];
   try {
-    const res = await fetch(ENDPOINT, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
-      body: JSON.stringify({
-        jsonrpc: "2.0", id: 1, method: "tools/call",
-        params: { name: "get_ads", arguments: { account_id: `act_${accountId}`, limit: 500 } },
-      }),
-      signal: AbortSignal.timeout(8_000),
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    const text = json?.result?.content?.[0]?.text;
-    if (!text) return null;
-    return (JSON.parse(text).data ?? []) as Ad[];
+    const url = new URL(`https://graph.facebook.com/${API_VERSION}/act_${accountId}/ads`);
+    url.searchParams.set("fields", "name,creative{effective_object_story_id,instagram_permalink_url}");
+    url.searchParams.set("limit", "500");
+    url.searchParams.set("access_token", token);
+    const out: Ad[] = [];
+    let next: string | undefined = url.toString();
+    while (next) {
+      const res: Response = await fetch(next, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
+      if (!res.ok) return out;
+      const json = await res.json();
+      out.push(...((json.data ?? []) as Ad[]));
+      next = json.paging?.next;
+    }
+    return out;
   } catch {
-    return null;
+    return [];
   }
 }
 
-// Mapa nome-do-anúncio → URL do post. Busca em TODAS as contas do dashboard (multi-
-// conta) + overrides manuais (manual vence). Conta bloqueada no Pipeboard falha em
-// silêncio e é ignorada — os criativos dela entram quando liberar.
+// Mapa nome-do-anúncio → URL do post: dataset (base) + Meta + overrides manuais.
 async function buildPostLinks(): Promise<Record<string, string>> {
-  const manual = MANUAL as Record<string, string>;
-  const perAccount = await Promise.all(META_ACCOUNT_IDS.map(fetchAds));
-  const ads = perAccount.filter(Boolean).flat() as Ad[];
+  const ads = (await Promise.all(META_ACCOUNT_IDS.map(fetchAds))).flat();
   const auto: Record<string, string> = {};
   for (const ad of ads) {
     if (!ad.name) continue;
-    const url = postUrlOf(ad.tracking_specs);
-    if (url) auto[ad.name] = url;
+    const url = postUrlOf(ad);
+    if (url && (!auto[ad.name] || url.includes("instagram.com"))) auto[ad.name] = url;
   }
-  return { ...POST_LINKS, ...auto, ...manual };
+  return { ...POST_LINKS, ...auto, ...(MANUAL as Record<string, string>) };
 }
 
-// Cacheado (POST não cacheia no fetch): criativos mudam pouco, então 30 min.
+// Cacheado (criativos mudam pouco): 30 min.
 export const resolvePostLinks = unstable_cache(
   buildPostLinks,
-  ["post-links", CONFIG.metaAccountId],
+  ["post-links", META_ACCOUNT_IDS.join(",")],
   { revalidate: 1800 },
 );

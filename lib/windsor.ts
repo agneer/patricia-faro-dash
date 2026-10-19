@@ -1,7 +1,7 @@
 import { ACCOUNT, CREATIVES, ALL_DATES, type DailyRow, type CreativeRow } from "./snapshot";
 import { resolvePostLinks } from "./creative-posts";
 import { CONFIG, CAMPAIGN_FILTER, productFilter, isBaseProduct, CODED_FILTER } from "./config";
-import { getLiveRecentCreatives } from "./meta-live";
+import { getMetaCreatives } from "./meta-live";
 import MANUAL_PURCHASES from "./manual-purchases.json";
 
 type PurchaseOverride = { date: string; ad: string; purchases: number; value: number };
@@ -38,13 +38,14 @@ const LT_CREATIVES = CREATIVES.filter((c) => isLowTicket(c.campaign));
 const LT_DAILY = deriveDaily(LT_CREATIVES);
 
 // Distinct campaigns (full name + shortened label), ordered by spend — for the filter.
-const CAMPAIGNS = (() => {
+// Calculado a partir dos dados do request (Meta ao vivo), então campanha nova já aparece.
+function campaignsOf(rows: CreativeRow[]): { value: string; label: string }[] {
   const m = new Map<string, number>();
-  for (const c of LT_CREATIVES) m.set(c.campaign, (m.get(c.campaign) ?? 0) + c.spend);
+  for (const c of rows) m.set(c.campaign, (m.get(c.campaign) ?? 0) + c.spend);
   return [...m.entries()]
     .sort((a, b) => b[1] - a[1])
     .map(([value]) => ({ value, label: shortenCampaign(value) }));
-})();
+}
 
 export type Trend = { value: number; dir: "up" | "down" | "flat"; good: boolean } | null;
 
@@ -259,7 +260,8 @@ function build(dailyIn: DailyRow[], creativesIn: CreativeRow[], range: RangeInfo
     daily = deriveDaily(creatives);
   }
   // Campanhas do dropdown, limitadas ao produto ativo.
-  const campaignsForProduct = (productRe || base) ? CAMPAIGNS.filter((c) => matchProduct(c.value)) : CAMPAIGNS;
+  const allCampaigns = campaignsOf(creativesIn);
+  const campaignsForProduct = (productRe || base) ? allCampaigns.filter((c) => matchProduct(c.value)) : allCampaigns;
 
   // Campaign filter: narrow to one campaign and re-derive the daily series from it.
   const filtered = campaign !== ALL_CAMPAIGNS;
@@ -322,25 +324,20 @@ function build(dailyIn: DailyRow[], creativesIn: CreativeRow[], range: RangeInfo
 export async function getDashboardData(params: { preset?: string; from?: string; to?: string; tax?: boolean; campaign?: string; product?: string; lite?: boolean }): Promise<DashboardData> {
   const withTax = !!params.tax;
   const product = params.product && (productFilter(params.product) || isBaseProduct(params.product)) ? params.product : "geral";
-  const campaign = params.campaign && CAMPAIGNS.some((c) => c.value === params.campaign) ? params.campaign : ALL_CAMPAIGNS;
 
-  // Base = bundled snapshot (history, kept fresh by the daily cron). Then overlay
-  // today's spend LIVE from Pipeboard/Meta (real-time, fixes the current-day lag).
-  // `lite` (usado no período anterior, só pra KPIs de comparação) pula overlay ao
-  // vivo e links de post — que são as chamadas de rede caras — e usa só o snapshot.
-  // Busca dados ao vivo e links de post em paralelo (independentes) — reduz a
-  // latência da requisição fria (cache expirado) pela metade.
+  // Fonte principal = Meta Marketing API ao vivo (todo o histórico, cache 2 min).
+  // O snapshot (dataset.json) é só reserva para os dias/campanhas que a Meta não
+  // devolver (sem token, ou janela que falhou). `lite` (período anterior, só KPIs de
+  // comparação) reusa a mesma consulta cacheada e pula só os links de post.
   const [liveRows, postLinks] = await Promise.all([
-    params.lite ? Promise.resolve<CreativeRow[]>([]) : getLiveRecentCreatives(),
+    getMetaCreatives(),
     params.lite ? Promise.resolve<Record<string, string>>({}) : resolvePostLinks(),
   ]);
   const hasLive = liveRows.length > 0;
   const liveDates = new Set(liveRows.map((c) => c.date));
 
-  // Overlay ao vivo: o Pipeboard só cobre a conta principal. Se removêssemos o DIA
-  // inteiro do snapshot pra recolocar só o ao vivo, perderíamos o gasto das OUTRAS
-  // contas (multi-conta) nesses dias. Então removemos só os pares (dia, campanha)
-  // que o ao vivo traz — as campanhas de outras contas (nomes diferentes) ficam.
+  // Sobreposição por par (dia, campanha) — nunca o dia inteiro — pra não apagar
+  // campanhas que só existem no snapshot naquele dia.
   const liveCampDate = new Set(liveRows.map((c) => `${c.date} ${c.campaign}`));
   const base = hasLive
     ? [...LT_CREATIVES.filter((c) => !liveCampDate.has(`${c.date} ${c.campaign}`)), ...liveRows]
@@ -353,6 +350,8 @@ export async function getDashboardData(params: { preset?: string; from?: string;
   const realToday = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
   const maxDate = realToday > liveMax ? realToday : liveMax;
 
+  // Campanha validada contra os dados reais do request (inclui campanhas novas da Meta).
+  const campaign = params.campaign && campaignsOf(creatives).some((c) => c.value === params.campaign) ? params.campaign : ALL_CAMPAIGNS;
   const range = resolveRange(params, maxDate);
   return build(daily, creatives, range, hasLive, withTax, campaign, maxDate, postLinks, product);
 }

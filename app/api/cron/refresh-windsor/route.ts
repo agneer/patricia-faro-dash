@@ -111,11 +111,18 @@ export async function GET(req: NextRequest) {
 
   try {
     const to = today();
-    // ?days=N permite um pull mais fundo (ex.: semear o histórico de uma conta nova).
-    const days = Math.min(Math.max(Number(req.nextUrl.searchParams.get("days")) || REFRESH_DAYS, 1), 400);
+    // Autorrecuperação: se o cron ficou parado e o snapshot está velho, puxa desde
+    // o último dia salvo (não só 7 dias) — o buraco se fecha na próxima execução.
+    const lastSnap = (bundled as CompactDataset).generatedTo;
+    const gap = lastSnap ? Math.round((Date.parse(to) - Date.parse(lastSnap)) / 86400000) + 1 : REFRESH_DAYS;
+    // ?days=N força um pull mais fundo (ex.: semear o histórico de uma conta nova).
+    const days = Math.min(Math.max(Number(req.nextUrl.searchParams.get("days")) || Math.max(REFRESH_DAYS, gap), 1), 400);
     const from = addDays(to, -(days - 1));
     const { rows: fresh, links } = await fetchWindsor(from, to);
-    if (!fresh.length) return NextResponse.json({ ok: false, error: "Windsor não retornou linhas LOW TICKET" }, { status: 502 });
+    if (!fresh.length) {
+      console.error(`[cron] Windsor sem linhas LOW TICKET (${from} → ${to})`);
+      return NextResponse.json({ ok: false, error: "Windsor não retornou linhas LOW TICKET" }, { status: 502 });
+    }
 
     const existing = expand(bundled as CompactDataset);
     // Keep the full history (campaign started 2026-01-06); 400-day window is a safe cap.
@@ -133,6 +140,8 @@ export async function GET(req: NextRequest) {
       dataset: { from: next.generatedFrom, to: next.generatedTo, rows: next.rows.length, days: next.daily.length, postLinks: Object.keys(next.postLinks ?? {}).length },
     });
   } catch (e) {
+    // Loga o motivo (ex.: "GITHUB_TOKEN ausente") — senão a falha diária fica invisível.
+    console.error("[cron] refresh falhou:", e);
     return NextResponse.json({ ok: false, error: String(e instanceof Error ? e.message : e) }, { status: 500 });
   }
 }

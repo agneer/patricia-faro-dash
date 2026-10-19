@@ -56,15 +56,26 @@ async function fetchAllSalesRaw(from: string, to: string): Promise<SaleRow[] | n
 
   const out: SaleRow[] = [];
   const pageSize = 1000;
-  for (let offset = 0; ; offset += pageSize) {
-    const res = await fetch(`${base}&limit=${pageSize}&offset=${offset}`, {
-      headers: { apikey: key, Authorization: `Bearer ${key}` },
-      cache: "no-store",
-    });
-    if (!res.ok) return out.length ? out : null;
-    const rows = (await res.json()) as SaleRow[];
-    out.push(...rows);
-    if (rows.length < pageSize) break;
+  // Supabase fora do ar (projeto pausado, URL errada na env) NÃO pode derrubar a
+  // página inteira: cai em "sem vendas Eduzz" e o gasto continua aparecendo.
+  try {
+    for (let offset = 0; ; offset += pageSize) {
+      const res = await fetch(`${base}&limit=${pageSize}&offset=${offset}`, {
+        headers: { apikey: key, Authorization: `Bearer ${key}` },
+        cache: "no-store",
+        signal: AbortSignal.timeout(8_000),
+      });
+      if (!res.ok) {
+        console.error(`[sales] Supabase HTTP ${res.status}: ${(await res.text().catch(() => "")).slice(0, 200)}`);
+        return out.length ? out : null;
+      }
+      const rows = (await res.json()) as SaleRow[];
+      out.push(...rows);
+      if (rows.length < pageSize) break;
+    }
+  } catch (e) {
+    console.error("[sales] falha ao consultar o Supabase:", e);
+    return out.length ? out : null;
   }
   return out;
 }

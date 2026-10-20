@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkAdmin } from "@/lib/admin";
-import { parseEduzzCsv } from "@/lib/eduzz-csv";
-import { upsertSales } from "@/lib/eduzz";
+import { parseHotmartCsv } from "@/lib/hotmart-csv";
+import { upsertSales } from "@/lib/hotmart";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Não consegui ler o arquivo." }, { status: 400 });
   }
 
-  const parsed = parseEduzzCsv(text);
+  const parsed = parseHotmartCsv(text);
   if (!parsed.ok) return NextResponse.json({ ok: false, error: parsed.error, headers: parsed.headers, detected: parsed.detected }, { status: 422 });
 
   // upsert em lotes (idempotente por invoice_id — reimportar não duplica)

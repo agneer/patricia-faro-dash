@@ -1,57 +1,53 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- Eduzz sales store for ICF Low Ticket dashboard.
--- Run this once in the Supabase SQL Editor (Dashboard → SQL → New query).
--- The dashboard reads revenue/purchases from here (source of truth) and joins
--- it with Meta spend (Windsor) by date + UTM to compute real CPA / ROAS.
+-- Vendas Hotmart do dashboard Patrícia Faro · Low Ticket.
+-- Rodar uma vez no Supabase (Dashboard → SQL Editor → New query).
+-- O dashboard lê faturamento/vendas daqui (fonte da verdade) e cruza com o gasto
+-- do Windsor por dia + UTM para calcular CPA / ROAS reais.
+-- Sem dados pessoais do comprador (nome, e-mail, documento): o painel não precisa.
 -- ─────────────────────────────────────────────────────────────────────────────
 
-create table if not exists public.eduzz_sales (
-  invoice_id      text primary key,           -- data.id (Eduzz invoice/fatura id)
-  status          text,                        -- paid | refunded | chargeback | ...
-  refunded        boolean not null default false,
-  gross_value     numeric(12,2) not null default 0,   -- data.price.value (bruto)
-  net_value       numeric(12,2) not null default 0,   -- data.paid.value  (líquido)
-  currency        text default 'BRL',
+create table if not exists public.hotmart_sales (
+  invoice_id         text primary key,           -- código da transação Hotmart (HP…)
+  parent_transaction text,                       -- order bump: transação principal
+  status             text,                       -- approved | complete | refunded | chargeback | canceled | ...
+  refunded           boolean not null default false,
+  order_bump         boolean not null default false,
+  gross_value        numeric(12,2) not null default 0,  -- valor da compra (data.purchase.price)
+  net_value          numeric(12,2) not null default 0,  -- comissão do produtor (data.commissions PRODUCER)
+  currency           text default 'BRL',
 
-  created_at      timestamptz,                 -- data.createdAt
-  paid_at         timestamptz,                 -- data.paidAt
-  -- date used for grouping/joining with Meta spend (paid day, fallback created)
-  sale_date       date generated always as (coalesce((paid_at at time zone 'America/Sao_Paulo')::date, (created_at at time zone 'America/Sao_Paulo')::date)) stored,
+  created_at         timestamptz,                -- data.purchase.order_date
+  paid_at            timestamptz,                -- data.purchase.approved_date
+  -- dia usado para agrupar/cruzar com o gasto (aprovação, senão pedido), em BRT
+  sale_date          date generated always as (coalesce((paid_at at time zone 'America/Sao_Paulo')::date, (created_at at time zone 'America/Sao_Paulo')::date)) stored,
 
-  product_id      text,
-  product_name    text,
+  product_id         text,
+  product_name       text,
+  offer_code         text,
 
-  buyer_email     text,
-  buyer_name      text,
+  -- atribuição (UTMs do link do checkout; src/sck/xcod = parâmetros próprios da Hotmart)
+  utm_source         text,
+  utm_campaign       text,
+  utm_medium         text,
+  utm_content        text,
+  utm_term           text,
+  src                text,
+  sck                text,
+  xcod               text,
 
-  -- attribution (carried by the checkout link's UTMs)
-  utm_source      text,
-  utm_campaign    text,
-  utm_medium      text,
-  utm_content     text,
-  utm_term        text,
-  tracker1        text,
-  tracker2        text,
-  tracker3        text,
+  payment_method     text,
+  installments       int,
 
-  affiliate_id    text,
-  affiliate_name  text,
-
-  payment_method  text,
-  installments    int,
-  order_bump      boolean default false,
-
-  last_event      text,                        -- last webhook event applied
-  raw             jsonb,                       -- full payload, for audit/replay
-  updated_at      timestamptz not null default now()
+  last_event         text,                       -- último evento aplicado (ou csv_import)
+  raw                jsonb,                      -- payload sem dados do comprador, p/ auditoria
+  updated_at         timestamptz not null default now()
 );
 
-create index if not exists eduzz_sales_sale_date_idx     on public.eduzz_sales (sale_date);
-create index if not exists eduzz_sales_paid_at_idx        on public.eduzz_sales (paid_at);
-create index if not exists eduzz_sales_utm_campaign_idx   on public.eduzz_sales (utm_campaign);
-create index if not exists eduzz_sales_utm_content_idx    on public.eduzz_sales (utm_content);
-create index if not exists eduzz_sales_status_idx         on public.eduzz_sales (status);
+create index if not exists hotmart_sales_sale_date_idx    on public.hotmart_sales (sale_date);
+create index if not exists hotmart_sales_paid_at_idx      on public.hotmart_sales (paid_at);
+create index if not exists hotmart_sales_utm_campaign_idx on public.hotmart_sales (utm_campaign);
+create index if not exists hotmart_sales_utm_content_idx  on public.hotmart_sales (utm_content);
 
--- Only the service-role key (server-side) touches this table; lock down anon.
-alter table public.eduzz_sales enable row level security;
--- (no policies = no anon/public access; service role bypasses RLS)
+-- Só a service-role key (servidor) mexe na tabela; anon bloqueado.
+alter table public.hotmart_sales enable row level security;
+-- (sem policies = sem acesso anon/public; service role ignora RLS)

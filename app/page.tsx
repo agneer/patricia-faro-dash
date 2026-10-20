@@ -1,6 +1,6 @@
 import { getDashboardData, type Trend } from "@/lib/windsor";
 import { getSalesData } from "@/lib/sales";
-import { EduzzSection } from "@/components/EduzzSection";
+import { SalesSection } from "@/components/SalesSection";
 import { brl, num, pct } from "@/lib/format";
 import { KpiCard, SectionTitle } from "@/components/ui";
 import { Funnel } from "@/components/Funnel";
@@ -43,10 +43,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
     getDashboardData({ from: prevFrom, to: prevTo, tax: sp.tax === "1", campaign: sp.campaign, product: sp.product, lite: true }),
   ]);
 
-  // Use real Eduzz sales for Compras/CPA/ROAS/Ticket when available.
-  const useEduzz = sales.available && sales.total > 0;
-  const prevSales = useEduzz ? prevSalesRaw : null;
-  const prevSpend = useEduzz ? prevD.kpi.spend : undefined;
+  // Use real Hotmart sales for Compras/CPA/ROAS/Ticket when available.
+  const useSales = sales.available && sales.total > 0;
+  const prevSales = useSales ? prevSalesRaw : null;
+  const prevSpend = useSales ? prevD.kpi.spend : undefined;
 
   const mkTrend = (curr: number, prev: number | undefined, lowerBetter = false): Trend => {
     if (!prev) return null;
@@ -55,10 +55,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
     return { value: v, dir, good: dir === "flat" ? true : lowerBetter ? v < 0 : v > 0 };
   };
 
-  // Real KPIs from Eduzz (spend stays from Windsor, tax-aware).
-  const eduzzCpa = sales.total ? k.spend / sales.total : 0;
-  const eduzzRoas = k.spend ? sales.gross / k.spend : 0;
-  const eduzzRoasLiq = k.spend ? sales.net / k.spend : 0;
+  // Real KPIs from Hotmart (spend stays from Windsor, tax-aware).
+  const salesCpa = sales.total ? k.spend / sales.total : 0;
+  const salesRoas = k.spend ? sales.gross / k.spend : 0;
+  const salesRoasLiq = k.spend ? sales.net / k.spend : 0;
   const prevCpa = prevSpend && prevSales?.total ? prevSpend / prevSales.total : undefined;
   const prevRoas = prevSpend && prevSales ? prevSales.gross / prevSpend : undefined;
   const eComprasSpark = sales.byDay.map((b) => b.count);
@@ -70,12 +70,12 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   const roasSpark = d.daily.map((x) => x.roas);
   const totalTempSpend = d.temperature.reduce((a, t) => a + t.spend, 0) || 1;
 
-  // Linhas da tabela diária: investimento (Meta) + vendas reais (Eduzz) por dia.
+  // Linhas da tabela diária: investimento (Meta) + vendas reais (Hotmart) por dia.
   const salesDayMap = new Map(sales.byDay.map((b) => [b.date, b]));
   const dailyRows = d.daily.map((x) => {
     const s = salesDayMap.get(x.date);
-    const vendas = useEduzz ? (s?.count ?? 0) : x.purchases;
-    const fat = useEduzz ? (s?.gross ?? 0) : x.value;
+    const vendas = useSales ? (s?.count ?? 0) : x.purchases;
+    const fat = useSales ? (s?.gross ?? 0) : x.value;
     return {
       date: x.date, spend: x.spend, vendas, fat,
       cpa: vendas ? x.spend / vendas : 0,
@@ -129,13 +129,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
       {MULTI_PRODUCT && <ProductToggle products={PRODUCTS} current={d.product} />}
 
       {/* Aviso: produto selecionado sem gasto de anúncio no período (não é bug — as
-          campanhas desse produto não rodaram nessas datas; vendas Eduzz seguem contando). */}
+          campanhas desse produto não rodaram nessas datas; vendas Hotmart seguem contando). */}
       {d.product !== "geral" && k.spend === 0 && (
         <div className="fade-up mb-3 flex items-start gap-2.5 rounded-xl px-4 py-3 text-[13px]" style={{ background: "color-mix(in srgb,var(--amber) 12%,transparent)", border: "1px solid color-mix(in srgb,var(--amber) 35%,transparent)" }}>
           <span className="text-[15px] leading-none">⚠️</span>
           <span className="text-[var(--text)]">
             <b>{PRODUCTS.find((p) => p.key === d.product)?.label ?? d.product}</b> não teve investimento de anúncio neste período — as campanhas desse produto não rodaram nessas datas.
-            {useEduzz && sales.total > 0 ? " As vendas abaixo (Eduzz) continuam contando." : ""} Troque pra <b>GERAL</b> ou um período que inclua os dias em que ele rodou.
+            {useSales && sales.total > 0 ? " As vendas abaixo (Hotmart) continuam contando." : ""} Troque pra <b>GERAL</b> ou um período que inclua os dias em que ele rodou.
           </span>
         </div>
       )}
@@ -143,15 +143,15 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
       {/* KPI hero */}
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <KpiCard label={d.withTax ? `Investimento c/ imposto` : "Investimento"} value={brl(k.spend)} sub={d.withTax ? `inclui ${taxPct}% · ${brl(k.spend / d.range.days)}/dia` : `sem imposto · ${brl(k.spend / d.range.days)}/dia`} trend={d.trends.spend} spark={spendSpark} sparkColor="var(--accent)" accent delay={0} />
-        <KpiCard label={useEduzz ? "Compras · Eduzz" : "Compras"} value={num(useEduzz ? sales.total : k.purchases)} sub={useEduzz ? "vendas reais" : `${num(k.checkout)} checkouts`} trend={useEduzz ? mkTrend(sales.total, prevSales?.total) : d.trends.purchases} spark={useEduzz ? eComprasSpark : purchSpark} sparkColor="var(--cyan)" delay={60} />
-        <KpiCard label={useEduzz ? "CPA · Eduzz" : "CPA"} value={brl(useEduzz ? eduzzCpa : k.cpa)} sub={useEduzz ? "gasto ÷ vendas reais" : `meta ${brl(CONFIG.cpaTarget)}`} trend={useEduzz ? mkTrend(eduzzCpa, prevCpa, true) : d.trends.cpa} spark={useEduzz ? undefined : cpaSpark} sparkColor="var(--rose)" delay={120} />
-        <KpiCard label={useEduzz ? "ROAS · Eduzz" : "ROAS"} value={`${num(useEduzz ? eduzzRoas : k.roas, 2)}x`} sub={useEduzz ? `${brl(sales.gross)} • líq ${num(eduzzRoasLiq, 2)}x` : `${brl(k.revenue)} retorno`} trend={useEduzz ? mkTrend(eduzzRoas, prevRoas) : d.trends.roas} spark={useEduzz ? undefined : roasSpark} sparkColor="var(--amber)" delay={180} />
-        <KpiCard label={useEduzz ? "Ticket médio · Eduzz" : "Ticket médio"} value={brl(useEduzz ? sales.avgTicket : k.ticket)} sub={useEduzz ? "real (bruto)" : `${num(k.purchases)} vendas`} trend={useEduzz ? mkTrend(sales.avgTicket, prevSales?.avgTicket) : d.trends.ticket} spark={useEduzz ? eTicketSpark : undefined} sparkColor="var(--emerald)" delay={240} />
+        <KpiCard label={useSales ? "Compras · Hotmart" : "Compras"} value={num(useSales ? sales.total : k.purchases)} sub={useSales ? "vendas reais" : `${num(k.checkout)} checkouts`} trend={useSales ? mkTrend(sales.total, prevSales?.total) : d.trends.purchases} spark={useSales ? eComprasSpark : purchSpark} sparkColor="var(--cyan)" delay={60} />
+        <KpiCard label={useSales ? "CPA · Hotmart" : "CPA"} value={brl(useSales ? salesCpa : k.cpa)} sub={useSales ? "gasto ÷ vendas reais" : `meta ${brl(CONFIG.cpaTarget)}`} trend={useSales ? mkTrend(salesCpa, prevCpa, true) : d.trends.cpa} spark={useSales ? undefined : cpaSpark} sparkColor="var(--rose)" delay={120} />
+        <KpiCard label={useSales ? "ROAS · Hotmart" : "ROAS"} value={`${num(useSales ? salesRoas : k.roas, 2)}x`} sub={useSales ? `${brl(sales.gross)} • líq ${num(salesRoasLiq, 2)}x` : `${brl(k.revenue)} retorno`} trend={useSales ? mkTrend(salesRoas, prevRoas) : d.trends.roas} spark={useSales ? undefined : roasSpark} sparkColor="var(--amber)" delay={180} />
+        <KpiCard label={useSales ? "Ticket médio · Hotmart" : "Ticket médio"} value={brl(useSales ? sales.avgTicket : k.ticket)} sub={useSales ? "real (bruto)" : `${num(k.purchases)} vendas`} trend={useSales ? mkTrend(sales.avgTicket, prevSales?.avgTicket) : d.trends.ticket} spark={useSales ? eTicketSpark : undefined} sparkColor="var(--emerald)" delay={240} />
       </section>
 
-      {/* Vendas reais (Eduzz) */}
+      {/* Vendas reais (Hotmart) */}
       {sales.available && sales.total > 0 && (
-        <EduzzSection
+        <SalesSection
           total={sales.total} gross={sales.gross} net={sales.net} avgTicket={sales.avgTicket}
           spend={k.spend} withTax={d.withTax} tickets={sales.tickets} byDay={sales.byDay}
         />
@@ -217,7 +217,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
 
       {/* Daily data table */}
       <section className="panel fade-up mt-4 p-5" style={{ animationDelay: "240ms" }}>
-        <SectionTitle icon="🗓️" title="Dados diários" hint={useEduzz ? "vendas reais (Eduzz) por dia" : "por dia"} />
+        <SectionTitle icon="🗓️" title="Dados diários" hint={useSales ? "vendas reais (Hotmart) por dia" : "por dia"} />
         <DailyTable rows={dailyRows} target={CONFIG.cpaTarget} />
       </section>
 
@@ -267,7 +267,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
         Dados via conector Windsor.ai · {d.account.connectorLabel} · conta {d.account.name} ({d.account.id})
         {!d.live && " · defina WINDSOR_API_KEY para atualização ao vivo"}
         <span className="mx-1.5">·</span>
-        <a href="/admin" className="underline-offset-2 transition-colors hover:text-[var(--muted)] hover:underline">⚙️ Admin / Vendas Eduzz</a>
+        <a href="/admin" className="underline-offset-2 transition-colors hover:text-[var(--muted)] hover:underline">⚙️ Admin / Vendas Hotmart</a>
       </footer>
     </main>
   );

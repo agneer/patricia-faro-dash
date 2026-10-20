@@ -1,9 +1,12 @@
-// Server-side reader for Eduzz sales stored in Supabase, with aggregations
+// Server-side reader for Hotmart sales stored in Supabase, with aggregations
 // for the dashboard (by day, by ticket value, by campaign/creative via UTM).
 import { unstable_cache } from "next/cache";
 import { productFilter, PRODUCTS, isBaseProduct, CODED_FILTER } from "./config";
 
 export type SaleRow = {
+  invoice_id: string;
+  parent_transaction: string | null;
+  order_bump: boolean;
   sale_date: string;
   gross_value: number;
   net_value: number;
@@ -29,7 +32,7 @@ export type SalesData = {
   byCreative: Map<string, { count: number; gross: number; net: number }>;
 };
 
-// Normalizes UTM/campaign strings so Eduzz values match Windsor names despite
+// Normalizes UTM/campaign strings so Hotmart values match Windsor names despite
 // URL-encoding, case, accents and stray whitespace.
 export function normKey(s: string | null | undefined): string {
   if (!s) return "";
@@ -48,8 +51,8 @@ async function fetchAllSalesRaw(from: string, to: string): Promise<SaleRow[] | n
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
 
-  const cols = "sale_date,gross_value,net_value,utm_campaign,utm_content,utm_term,status,product_name";
-  const base = `${url}/rest/v1/eduzz_sales?select=${cols}` +
+  const cols = "invoice_id,parent_transaction,order_bump,sale_date,gross_value,net_value,utm_campaign,utm_content,utm_term,status,product_name";
+  const base = `${url}/rest/v1/hotmart_sales?select=${cols}` +
     `&sale_date=gte.${from}&sale_date=lte.${to}` +
     `&refunded=eq.false&invoice_id=not.like.TEST-*&gross_value=gt.0` +
     `&order=sale_date.asc`;
@@ -57,7 +60,7 @@ async function fetchAllSalesRaw(from: string, to: string): Promise<SaleRow[] | n
   const out: SaleRow[] = [];
   const pageSize = 1000;
   // Supabase fora do ar (projeto pausado, URL errada na env) NÃO pode derrubar a
-  // página inteira: cai em "sem vendas Eduzz" e o gasto continua aparecendo.
+  // página inteira: cai em "sem vendas Hotmart" e o gasto continua aparecendo.
   try {
     for (let offset = 0; ; offset += pageSize) {
       const res = await fetch(`${base}&limit=${pageSize}&offset=${offset}`, {
@@ -82,13 +85,29 @@ async function fetchAllSalesRaw(from: string, to: string): Promise<SaleRow[] | n
 
 // Cacheado por intervalo (60s): trocar filtros repetidamente reusa a mesma query
 // ao Supabase em vez de refazer a cada render. Webhook novo aparece em até 1 min.
-const fetchAllSales = unstable_cache(fetchAllSalesRaw, ["eduzz-sales"], { revalidate: 60 });
+const fetchAllSales = unstable_cache(fetchAllSalesRaw, ["hotmart-sales"], { revalidate: 60 });
+
+// Na Hotmart o order bump é uma transação separada. Soma o bump na venda principal
+// (valor e ticket, como "R$ 27 + bump = R$ 44") para não contar uma venda a mais;
+// bump sem a principal no período (ex.: principal estornada) fica como venda própria.
+function mergeOrderBumps(rows: SaleRow[]): SaleRow[] {
+  const byId = new Map(rows.filter((r) => !r.order_bump).map((r) => [r.invoice_id, { ...r }]));
+  const out = [...byId.values()];
+  for (const r of rows) {
+    if (!r.order_bump) continue;
+    const parent = r.parent_transaction ? byId.get(r.parent_transaction) : undefined;
+    if (parent) { parent.gross_value += r.gross_value || 0; parent.net_value += r.net_value || 0; }
+    else out.push(r);
+  }
+  return out;
+}
 
 export async function getSalesData(from: string, to: string, campaign?: string, product?: string): Promise<SalesData> {
-  const allRaw = await fetchAllSales(from, to);
+  const fetched = await fetchAllSales(from, to);
+  const allRaw = fetched && mergeOrderBumps(fetched);
   if (!allRaw) return { available: false, total: 0, gross: 0, net: 0, avgTicket: 0, tickets: [], byDay: [], byCampaign: new Map(), byCreative: new Map() };
   // Product filter (toggle): venda pertence ao produto se a UTM da campanha casa
-  // com o padrão OU se o nome do produto (Eduzz) bate — mais robusto p/ vendas
+  // com o padrão OU se o nome do produto (Hotmart) bate — mais robusto p/ vendas
   // sem a UTM certinha.
   const productRe = productFilter(product);
   const prodName = product ? PRODUCTS.find((p) => p.key === product)?.productName : undefined;
@@ -102,7 +121,7 @@ export async function getSalesData(from: string, to: string, campaign?: string, 
         productRe.test(r.utm_campaign ?? "") ||
         (!!prodNameKey && normKey(r.product_name).includes(prodNameKey)))
     : allRaw;
-  // Optional campaign filter: match Eduzz utm_campaign to the selected campaign.
+  // Optional campaign filter: match Hotmart utm_campaign to the selected campaign.
   const rows = campaign && campaign !== "all"
     ? all.filter((r) => normKey(r.utm_campaign) === normKey(campaign))
     : all;

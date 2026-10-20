@@ -44,8 +44,7 @@ export default function AdminPage() {
   };
 
   const copyUrl = async () => {
-    const url = `${stats?.webhookUrl}?secret=•••••••••`;
-    await navigator.clipboard.writeText(url.replace("?secret=•••••••••", ""));
+    await navigator.clipboard.writeText(stats?.webhookUrl ?? "");
     setCopied(true); setTimeout(() => setCopied(false), 1500);
   };
 
@@ -55,7 +54,7 @@ export default function AdminPage() {
         <div className="flex items-center gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-xl text-[18px]" style={{ background: "linear-gradient(140deg,var(--accent),var(--accent-2))" }}>⚙️</div>
           <div>
-            <h1 className="text-[18px] font-semibold tracking-tight">Administração · Vendas Eduzz</h1>
+            <h1 className="text-[18px] font-semibold tracking-tight">Administração · Vendas Hotmart</h1>
             <p className="text-[12px] text-[var(--muted)]">Importe o histórico por planilha e acompanhe o webhook</p>
           </div>
         </div>
@@ -94,10 +93,10 @@ export default function AdminPage() {
           <section className="panel fade-up p-5">
             <div className="mb-3 flex items-center gap-2.5">
               <span className="grid h-7 w-7 place-items-center rounded-lg text-[14px]" style={{ background: "color-mix(in srgb, var(--cyan) 16%, transparent)" }}>🔗</span>
-              <h2 className="text-[15px] font-semibold">Webhook Eduzz</h2>
+              <h2 className="text-[15px] font-semibold">Webhook Hotmart</h2>
               <span className="ml-auto rounded-full px-2 py-[3px] text-[10.5px] font-semibold uppercase tracking-wide" style={{ color: "var(--emerald)", background: "color-mix(in srgb,var(--emerald) 14%,transparent)" }}>● Ativo</span>
             </div>
-            <p className="text-[12.5px] text-[var(--muted)]">URL do endpoint (cadastre na Eduzz → Órbita → Webhooks, com <code>?secret=SUA_SENHA</code> no final):</p>
+            <p className="text-[12.5px] text-[var(--muted)]">URL do endpoint (cadastre na Hotmart → Ferramentas → Webhook, versão 2.0.0; o Hottok da tela vai em <code>HOTMART_HOTTOK</code> na Vercel):</p>
             <div className="mt-2 flex items-center gap-2">
               <code className="flex-1 truncate rounded-lg border border-[var(--border-soft)] bg-[var(--bg-elev)] px-3 py-2 text-[12px] text-[var(--text)]">{stats?.webhookUrl}</code>
               <button onClick={copyUrl} className="rounded-lg border border-[var(--border-soft)] px-3 py-2 text-[12px] text-[var(--muted)] hover:text-[var(--text)]">{copied ? "✓ Copiado" : "Copiar"}</button>
@@ -111,7 +110,7 @@ export default function AdminPage() {
               <span className="grid h-7 w-7 place-items-center rounded-lg text-[14px]" style={{ background: "color-mix(in srgb, var(--amber) 16%, transparent)" }}>📤</span>
               <h2 className="text-[15px] font-semibold">Importar histórico (planilha)</h2>
             </div>
-            <p className="text-[12.5px] text-[var(--muted)]">Exporte as vendas na Eduzz em CSV e suba aqui. A importação é idempotente — reenviar não duplica (chave por nº da fatura).</p>
+            <p className="text-[12.5px] text-[var(--muted)]">Exporte as vendas na Hotmart (Vendas → Histórico → Exportar, CSV) e suba aqui. A importação é idempotente — reenviar não duplica (chave pelo código da transação).</p>
 
             <label className="mt-3 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[var(--border)] bg-[var(--bg-elev)] px-4 py-8 text-center transition-colors hover:border-[var(--accent)]">
               <input type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setResult(null); }} />

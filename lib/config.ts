@@ -8,7 +8,7 @@
 export const CONFIG = {
   // Branding
   appName: process.env.APP_NAME ?? "Patrícia Faro · Low Ticket",
-  appDescription: process.env.APP_DESCRIPTION ?? "Painel de performance Meta Ads + vendas Eduzz",
+  appDescription: process.env.APP_DESCRIPTION ?? "Painel de performance Meta Ads + vendas Hotmart",
   scopeLabel: process.env.SCOPE_LABEL ?? "LOW TICKET · GAS", // chip showing the campaign scope
 
   // Meta Ads account + which campaigns belong to this dashboard
@@ -23,7 +23,7 @@ export const CONFIG = {
 // ─────────────────────────────────────────────────────────────────────────────
 // Produtos (low-tickets) deste dashboard. Cada um tem um `pattern` que aparece
 // tanto no nome da campanha no Meta (gasto/criativos) quanto na UTM Campaign das
-// vendas Eduzz — então um único padrão separa gasto E vendas de forma alinhada.
+// vendas Hotmart — então um único padrão separa gasto E vendas de forma alinhada.
 // Vazio (`[]`) = dashboard de produto único (comportamento antigo, sem toggle).
 // ─────────────────────────────────────────────────────────────────────────────
 import PRODUCTS_JSON from "./products.json";

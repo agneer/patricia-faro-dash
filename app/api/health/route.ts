@@ -41,7 +41,7 @@ export async function GET() {
       ? probe(`https://api.github.com/repos/${repo}`, { headers: { Authorization: `Bearer ${ghToken}`, "User-Agent": "dash-health" } })
       : null,
     sbUrl && sbKey
-      ? probe(`${sbUrl}/rest/v1/eduzz_sales?select=invoice_id&limit=1`, { headers: { apikey: sbKey, Authorization: `Bearer ${sbKey}` } })
+      ? probe(`${sbUrl}/rest/v1/hotmart_sales?select=invoice_id&limit=1`, { headers: { apikey: sbKey, Authorization: `Bearer ${sbKey}` } })
       : null,
     wKey
       ? probe(`https://connectors.windsor.ai/facebook?api_key=${encodeURIComponent(wKey)}&date_from=${day}&date_to=${day}&fields=account_id,spend&select_accounts=939669440392208`)
@@ -56,7 +56,7 @@ export async function GET() {
     snapshotAte: (bundled as { generatedTo: string }).generatedTo,
     env: Object.fromEntries(
       ["WINDSOR_API_KEY", "GITHUB_TOKEN", "GITHUB_REPO", "CRON_SECRET", "ADMIN_PASSWORD", "SUPABASE_URL",
-        "SUPABASE_SERVICE_ROLE_KEY", "EDUZZ_WEBHOOK_SECRET"].map((k) => [k, has(k)]),
+        "SUPABASE_SERVICE_ROLE_KEY", "HOTMART_HOTTOK"].map((k) => [k, has(k)]),
     ),
     github: gh
       ? { repoAlvo: repo, http: gh.status, podeCommitar: ghBody?.permissions?.push ?? false, msg: ghBody?.message }

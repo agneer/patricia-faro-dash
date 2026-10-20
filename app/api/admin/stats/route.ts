@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
     sbCount(),
     sbCount("&utm_campaign=not.is.null"),
     sbCount("&last_event=eq.csv_import"),
-    sbCount("&last_event=eq.myeduzz.invoice_paid"),
+    sbCount("&last_event=neq.csv_import"),
     sbLastSale(),
   ]);
 
@@ -23,6 +23,6 @@ export async function GET(req: NextRequest) {
     fromCsv,
     fromWebhook,
     lastSale: last?.paid_at ?? last?.sale_date ?? null,
-    webhookUrl: `${req.nextUrl.origin}/api/eduzz/webhook`,
+    webhookUrl: `${req.nextUrl.origin}/api/hotmart/webhook`,
   });
 }

@@ -9,7 +9,7 @@ type Day = { date: string; count: number; gross: number; net: number; perTicket:
 
 const TICKET_COLORS = ["#22d3ee", "#6366f1", "#8b5cf6", "#34d399", "#fbbf24", "#fb7185"];
 
-export function EduzzSection({
+export function SalesSection({
   total, gross, net, avgTicket, spend, withTax, tickets, byDay,
 }: {
   total: number; gross: number; net: number; avgTicket: number; spend: number; withTax: boolean;
@@ -38,15 +38,15 @@ export function EduzzSection({
   return (
     <section className="panel fade-up mt-4 p-5" style={{ borderColor: "color-mix(in srgb, var(--cyan) 30%, var(--border))" }}>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <SectionTitle icon="💳" title="Vendas reais · Eduzz" hint={`${num(total)} vendas no período`} />
-        <span className="rounded-full px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-wide" style={{ color: "var(--cyan)", background: "color-mix(in srgb,var(--cyan) 13%,transparent)" }}>fonte: Eduzz (não pixel)</span>
+        <SectionTitle icon="💳" title="Vendas reais · Hotmart" hint={`${num(total)} vendas no período`} />
+        <span className="rounded-full px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-wide" style={{ color: "var(--cyan)", background: "color-mix(in srgb,var(--cyan) 13%,transparent)" }}>fonte: Hotmart (não pixel)</span>
       </div>
 
       {/* KPIs reais */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
         <MiniStat label="Vendas" value={num(total)} hint="pagas no período" />
         <MiniStat label="Fat. Bruto" value={brl(gross)} hint="valor total das vendas" />
-        <MiniStat label="Fat. Líquido" value={brl(net)} hint="ganho real (Eduzz)" />
+        <MiniStat label="Fat. Líquido" value={brl(net)} hint="comissão do produtor" />
         <MiniStat label="Ticket médio" value={brl(avgTicket)} hint="bruto / vendas" />
         <MiniStat label="CPA real" value={total ? brl(cpa) : "—"} hint={withTax ? "gasto c/ imp ÷ vendas" : "gasto ÷ vendas"} />
         <MiniStat label="ROAS real" value={spend ? `${num(roasBruto, 2)}x` : "—"} hint={`líq. ${num(roasLiq, 2)}x`} />
@@ -55,7 +55,7 @@ export function EduzzSection({
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[1.5fr_1fr]">
         {/* vendas por dia, empilhado por ticket */}
         <div>
-          <h3 className="mb-3 text-[13px] font-medium text-[var(--muted)]">Vendas por dia · empilhado por ticket</h3>
+          <h3 className="mb-3 text-[13px] font-medium text-[var(--muted)]">Vendas por dia · empilhado por ticket (com order bump)</h3>
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={chart} margin={{ top: 4, right: 6, left: 0, bottom: 0 }}>
               <CartesianGrid stroke="#1c2438" vertical={false} />

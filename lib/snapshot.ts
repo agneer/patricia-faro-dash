@@ -64,3 +64,9 @@ export const ALL_DATES: string[] = [...dates].sort();
 // Serve criativos com o botão "post↗" sem depender do Pipeboard (dashboard só-Windsor).
 export const POST_LINKS: Record<string, string> =
   ((dataset as { postLinks?: Record<string, string> }).postLinks) ?? {};
+
+// Status atual de cada anúncio (effective_status da Meta, via Windsor), chave
+// adStatusKey(anúncio, conjunto, campanha). Reserva do mapa que vem ao vivo.
+export const adStatusKey = (ad: string, adset: string, campaign: string) => `${ad} || ${adset} || ${campaign}`;
+export const AD_STATUS: Record<string, string> =
+  ((dataset as { adStatus?: Record<string, string> }).adStatus) ?? {};

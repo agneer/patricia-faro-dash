@@ -1,4 +1,4 @@
-import { ACCOUNT, CREATIVES, ALL_DATES, type DailyRow, type CreativeRow } from "./snapshot";
+import { ACCOUNT, CREATIVES, ALL_DATES, AD_STATUS, adStatusKey, type DailyRow, type CreativeRow } from "./snapshot";
 import { resolvePostLinks } from "./creative-posts";
 import { CONFIG, CAMPAIGN_FILTER, productFilter, isBaseProduct, CODED_FILTER } from "./config";
 import { getLiveData } from "./windsor-live";
@@ -67,8 +67,22 @@ export type BreakdownRow = {
   cplpv: number;         // spend / lpv (custo por visualização de página)
   cpco: number;          // spend / checkout (custo por checkout)
   postUrl?: string;      // link do post do criativo (Instagram)
+  status?: AdStatus;     // status atual do anúncio (só na tabela de criativos)
   children?: BreakdownRow[];
 };
+
+// Status atual na Meta (effective_status). `active` = está entregando.
+export type AdStatus = { active: boolean; label: string };
+
+const STATUS_LABELS: Record<string, string> = {
+  ACTIVE: "Ativo", PAUSED: "Pausado", ADSET_PAUSED: "Conjunto pausado", CAMPAIGN_PAUSED: "Campanha pausada",
+  ARCHIVED: "Arquivado", DELETED: "Excluído", DISAPPROVED: "Reprovado", WITH_ISSUES: "Com problema",
+  PENDING_REVIEW: "Em análise", IN_PROCESS: "Em análise", PENDING_BILLING_INFO: "Pagamento pendente",
+};
+function toStatus(raw: string | undefined): AdStatus | undefined {
+  if (!raw) return undefined;
+  return { active: raw === "ACTIVE", label: STATUS_LABELS[raw] ?? raw.toLowerCase().replace(/_/g, " ") };
+}
 
 export type RangeInfo = { from: string; to: string; days: number; label: string; preset: string };
 
@@ -241,7 +255,34 @@ function aggregate(rows: CreativeRow[], keyFn: (r: CreativeRow) => string, child
     .sort((a, b) => b.spend - a.spend);
 }
 
-function build(dailyIn: DailyRow[], creativesIn: CreativeRow[], range: RangeInfo, live: boolean, withTax: boolean, campaign: string, maxDate: string, postLinks: Record<string, string>, product: string): DashboardData {
+// Tabela de criativos: TODOS os anúncios já usados (no escopo do filtro), não só os
+// que gastaram no período. Métricas = período escolhido (zeradas se não rodou);
+// filhos = todos os conjuntos em que o anúncio rodou. Status = situação atual na Meta.
+function aggregateCreatives(win: CreativeRow[], all: CreativeRow[], statuses: Record<string, string>): BreakdownRow[] {
+  const childKey = (r: CreativeRow) => `${r.adset} · ${shortenCampaign(r.campaign)}`;
+  const winByAd = groupBy(win, (r) => r.ad);
+  return [...groupBy(all, (r) => r.ad)]
+    .map(([ad, allRows]) => {
+      const winChildren = groupBy(winByAd.get(ad) ?? [], childKey);
+      // Empate (ex.: tudo zerado no período) → conjunto de maior gasto no histórico primeiro.
+      const allSpend = new Map([...groupBy(allRows, childKey)].map(([k, rows]) => [k, sum(rows, (r) => r.spend)]));
+      const children = [...groupBy(allRows, childKey)]
+        .map(([label, rows]) => ({
+          ...rollup(winChildren.get(label) ?? [], label),
+          status: toStatus(statuses[adStatusKey(rows[0].ad, rows[0].adset, rows[0].campaign)]),
+        }))
+        .sort((a, b) => b.spend - a.spend || (allSpend.get(b.label) ?? 0) - (allSpend.get(a.label) ?? 0));
+      const row = rollup(winByAd.get(ad) ?? [], ad);
+      row.children = children;
+      row.sub = `${children.length} ${children.length === 1 ? "conjunto" : "conjuntos"}`;
+      // Ativo se algum conjunto está ativo; senão mostra o motivo do conjunto principal.
+      row.status = children.find((c) => c.status?.active)?.status ?? children.find((c) => c.status)?.status;
+      return row;
+    })
+    .sort((a, b) => b.spend - a.spend || Number(!!b.status?.active) - Number(!!a.status?.active));
+}
+
+function build(dailyIn: DailyRow[], creativesIn: CreativeRow[], range: RangeInfo, live: boolean, withTax: boolean, campaign: string, maxDate: string, postLinks: Record<string, string>, product: string, statuses: Record<string, string>): DashboardData {
   // When tax is on, gross up every spend value before aggregation so all
   // spend-derived metrics (CPA, CPM, CPC, ROAS, totals) become tax-inclusive.
   const f = withTax ? 1 + TAX_RATE : 1;
@@ -310,7 +351,7 @@ function build(dailyIn: DailyRow[], creativesIn: CreativeRow[], range: RangeInfo
     trends,
     funnel,
     daily: dailyOut,
-    creatives: aggregate(cWin, (r) => r.ad, (r) => `${r.adset} · ${shortenCampaign(r.campaign)}`).map((r) => ({ ...r, postUrl: postLinks[r.label] })),
+    creatives: aggregateCreatives(cWin, creatives, statuses).map((r) => ({ ...r, postUrl: postLinks[r.label] })),
     // When a campaign is selected, "Páginas & ofertas" drills into its ad sets.
     pages: filtered ? aggregate(cWin, (r) => r.adset) : aggregate(cWin, (r) => shortenCampaign(r.campaign)),
     pagesBy: filtered ? "adset" : "campaign",
@@ -332,6 +373,7 @@ export async function getDashboardData(params: { preset?: string; from?: string;
   const live = await getLiveData();
   const liveRows = live.rows;
   const postLinks = params.lite ? {} : resolvePostLinks(live.links);
+  const statuses = { ...AD_STATUS, ...live.statuses };
   const hasLive = liveRows.length > 0;
   const liveDates = new Set(liveRows.map((c) => c.date));
 
@@ -352,5 +394,5 @@ export async function getDashboardData(params: { preset?: string; from?: string;
   // Campanha validada contra os dados reais do request (inclui campanhas novas da Meta).
   const campaign = params.campaign && campaignsOf(creatives).some((c) => c.value === params.campaign) ? params.campaign : ALL_CAMPAIGNS;
   const range = resolveRange(params, maxDate);
-  return build(daily, creatives, range, hasLive, withTax, campaign, maxDate, postLinks, product);
+  return build(daily, creatives, range, hasLive, withTax, campaign, maxDate, postLinks, product, statuses);
 }

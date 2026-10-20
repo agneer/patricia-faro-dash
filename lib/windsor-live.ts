@@ -5,16 +5,17 @@
 // Também traz o link do post de cada anúncio (botão "post↗").
 import { unstable_cache } from "next/cache";
 import { CAMPAIGN_FILTER, META_ACCOUNT_IDS } from "./config";
-import { ALL_DATES, type CreativeRow } from "./snapshot";
+import { ALL_DATES, adStatusKey, type CreativeRow } from "./snapshot";
 
 const FIELDS = [
   "date", "account_id", "ad_name", "campaign", "adset_name", "spend", "impressions", "clicks", "link_clicks",
   "actions_offsite_conversion_fb_pixel_purchase", "action_values_offsite_conversion_fb_pixel_purchase",
   "actions_offsite_conversion_fb_pixel_initiate_checkout", "actions_landing_page_view",
-  "effective_object_story_id", "instagram_permalink_url",
+  "effective_object_story_id", "instagram_permalink_url", "effective_status",
 ];
 
-export type LiveData = { rows: CreativeRow[]; links: Record<string, string> };
+// statuses: status atual (effective_status) por adStatusKey(anúncio, conjunto, campanha).
+export type LiveData = { rows: CreativeRow[]; links: Record<string, string>; statuses: Record<string, string> };
 
 const brtToday = () => new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
 const addDays = (iso: string, n: number) => new Date(Date.parse(iso) + n * 86400000).toISOString().slice(0, 10);
@@ -28,7 +29,7 @@ function fbPostUrl(objectStoryId: string): string {
 // Lança em falha (pra unstable_cache não guardar resultado vazio); quem chama trata.
 async function fetchLive(): Promise<LiveData> {
   const key = process.env.WINDSOR_API_KEY?.trim();
-  if (!key) return { rows: [], links: {} };
+  if (!key) return { rows: [], links: {}, statuses: {} };
   const url = new URL("https://connectors.windsor.ai/facebook");
   url.searchParams.set("api_key", key);
   url.searchParams.set("date_from", ALL_DATES[0] ?? addDays(brtToday(), -89));
@@ -55,13 +56,22 @@ async function fetchLive(): Promise<LiveData> {
     if (!links[ad] || (ig && !links[ad].includes("instagram.com"))) links[ad] = link;
   }
 
+  // Mesmo nome/conjunto/campanha pode ter mais de um anúncio: ativo se algum estiver ativo.
+  const statuses: Record<string, string> = {};
+  for (const r of kept) {
+    const st = r.effective_status ? String(r.effective_status) : "";
+    if (!st) continue;
+    const k = adStatusKey(String(r.ad_name ?? "—"), String(r.adset_name ?? "—"), String(r.campaign ?? "—"));
+    if (!statuses[k] || st === "ACTIVE") statuses[k] = st;
+  }
+
   const rows = kept.map((r) => ({
     date: String(r.date), ad: String(r.ad_name ?? "—"), campaign: String(r.campaign ?? "—"), adset: String(r.adset_name ?? "—"),
     spend: +(r.spend ?? 0), impressions: +(r.impressions ?? 0), clicks: +(r.clicks ?? 0), link_clicks: +(r.link_clicks ?? 0),
     purchases: +(r.actions_offsite_conversion_fb_pixel_purchase ?? 0), value: +(r.action_values_offsite_conversion_fb_pixel_purchase ?? 0),
     checkout: +(r.actions_offsite_conversion_fb_pixel_initiate_checkout ?? 0), lpv: +(r.actions_landing_page_view ?? 0),
   }));
-  return { rows, links };
+  return { rows, links, statuses };
 }
 
 // Cacheado no servidor por 10 min (stale-while-revalidate): todas as renders/filtros
@@ -73,6 +83,6 @@ export async function getLiveData(): Promise<LiveData> {
     return await cachedLive();
   } catch (e) {
     console.error("[windsor-live] falhou, usando snapshot:", e);
-    return { rows: [], links: {} };
+    return { rows: [], links: {}, statuses: {} };
   }
 }

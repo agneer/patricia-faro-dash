@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { BreakdownRow } from "@/lib/windsor";
+import type { BreakdownRow, AdStatus } from "@/lib/windsor";
 import { brl, num, pct } from "@/lib/format";
 
 type Col = { key: keyof BreakdownRow; label: string; fmt: (r: BreakdownRow) => string };
@@ -27,6 +27,20 @@ function cpaColor(cpa: number, target: number) {
   if (cpa <= target) return "var(--emerald)";
   if (cpa <= target * 1.6) return "var(--amber)";
   return "var(--rose)";
+}
+
+function StatusBadge({ status }: { status?: AdStatus }) {
+  if (!status) return null;
+  const color = status.active ? "var(--emerald)" : "var(--muted-2)";
+  return (
+    <span
+      title={status.active ? "Anúncio ativo agora" : `Não está rodando agora: ${status.label.toLowerCase()}`}
+      className="shrink-0 whitespace-nowrap rounded-md px-1.5 py-[1px] text-[10px] font-semibold leading-none"
+      style={{ color, background: `color-mix(in srgb,${color} 14%,transparent)` }}
+    >
+      {status.active ? "● " : "○ "}{status.label}
+    </span>
+  );
 }
 
 function Cells({ r, target }: { r: BreakdownRow; target: number }) {
@@ -100,7 +114,7 @@ export function DataTable({
               const isOpen = open[r.label];
               return (
                 <FragmentRow key={r.label + i}>
-                  <tr className="border-t border-[var(--border-soft)] transition-colors hover:bg-[color-mix(in_srgb,var(--accent)_6%,transparent)]">
+                  <tr className="border-t border-[var(--border-soft)] transition-colors hover:bg-[color-mix(in_srgb,var(--accent)_6%,transparent)]" style={r.status && !r.spend ? { opacity: 0.6 } : undefined}>
                     <td className="sticky left-0 z-10 max-w-[280px] bg-[var(--panel)] px-3 py-2.5">
                       <div className="flex items-start gap-2">
                         {hasTree && (
@@ -132,6 +146,7 @@ export function DataTable({
                                 post ↗
                               </a>
                             )}
+                            <StatusBadge status={r.status} />
                           </div>
                           <div className="mt-1 flex items-center gap-2">
                             <div className="h-1 w-16 overflow-hidden rounded-full bg-[var(--bg-elev)]">
@@ -151,12 +166,15 @@ export function DataTable({
                         <div className="flex items-center gap-2 pl-[26px]">
                           <span className="text-[var(--muted-2)]">↳</span>
                           <div className="min-w-0">
-                            <div className="truncate text-[12.5px] text-[var(--muted)]" title={c.label}>{c.label}</div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="truncate text-[12.5px] text-[var(--muted)]" title={c.label}>{c.label}</span>
+                              <StatusBadge status={c.status} />
+                            </div>
                             <div className="mt-1 h-[3px] w-14 overflow-hidden rounded-full bg-[var(--bg)]">
-                              <div className="h-full rounded-full" style={{ width: `${(c.spend / r.spend) * 100}%`, background: "var(--cyan)" }} />
+                              <div className="h-full rounded-full" style={{ width: `${r.spend ? (c.spend / r.spend) * 100 : 0}%`, background: "var(--cyan)" }} />
                             </div>
                           </div>
-                          <span className="ml-auto whitespace-nowrap text-[10.5px] text-[var(--muted-2)] tnum">{pct(c.spend / r.spend, 0)} do criativo</span>
+                          <span className="ml-auto whitespace-nowrap text-[10.5px] text-[var(--muted-2)] tnum">{r.spend ? `${pct(c.spend / r.spend, 0)} do criativo` : "sem gasto no período"}</span>
                         </div>
                       </td>
                       <Cells r={c} target={target} />

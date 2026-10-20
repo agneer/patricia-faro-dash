@@ -259,7 +259,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
 
       {/* Creatives — full width */}
       <section className="panel fade-up mt-4 p-5" style={{ animationDelay: "120ms" }}>
-        <SectionTitle icon="🎬" title="Desempenho de criativos" hint={`${d.creatives.length} anúncios ativos`} />
+        <SectionTitle icon="🎬" title="Desempenho de criativos" hint={`${d.creatives.length} anúncios usados · ${d.creatives.filter((c) => c.status?.active).length} ativos agora`} />
         <DataTable rows={d.creatives} firstLabel="Anúncio" pageSize={8} target={CONFIG.cpaTarget} />
       </section>
 

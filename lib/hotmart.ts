@@ -120,15 +120,31 @@ async function isAlreadyReversed(id: string): Promise<boolean> {
 /** Grava um evento do webhook. Um "aprovado" que chega depois do estorno não desfaz o estorno. */
 export async function ingestWebhook(body: unknown): Promise<{ status: number; payload: object }> {
   const sale = saleFromWebhook(body);
-  if (!sale) return { status: 200, payload: { ok: true, ignored: true } };
-  if (!sale.refunded && (await isAlreadyReversed(sale.invoice_id))) {
-    return { status: 200, payload: { ok: true, kept: "refunded" } };
+  if (!sale) {
+    console.log(`[hotmart] evento ignorado: ${String(at(body, "event") ?? "?")}`);
+    return { status: 200, payload: { ok: true, ignored: true } };
   }
-  const r = await upsertSales([sale]);
-  if (!r.ok) return { status: 502, payload: { ok: false, error: r.error } };
-  // sem dados do comprador no log
+  // Loga o que chegou ANTES de gravar (sem dados do comprador), pra conferir UTMs
+  // mesmo se o banco falhar. Chaves de origem/rastreio mostram onde a Hotmart põe as UTMs.
+  const origin = at(body, "data", "purchase", "origin");
   console.log(`[hotmart] ${sale.invoice_id} ${sale.last_event} "${sale.product_name}" ${sale.gross_value} ${sale.currency}` +
-    ` bump=${sale.order_bump} utm_campaign=${sale.utm_campaign ?? "—"} utm_content=${sale.utm_content ?? "—"}`);
+    ` bump=${sale.order_bump} utm_campaign=${sale.utm_campaign ?? "—"} utm_content=${sale.utm_content ?? "—"}` +
+    ` origin=${JSON.stringify(origin ?? null)}`);
+  try {
+    if (!sale.refunded && (await isAlreadyReversed(sale.invoice_id))) {
+      return { status: 200, payload: { ok: true, kept: "refunded" } };
+    }
+    const r = await upsertSales([sale]);
+    if (!r.ok) {
+      console.error(`[hotmart] ${sale.invoice_id} não gravou no Supabase: HTTP ${r.status} ${String(r.error).slice(0, 200)}`);
+      return { status: 502, payload: { ok: false, error: r.error } };
+    }
+  } catch (e) {
+    // Banco fora do ar: responde erro para a Hotmart reenviar depois.
+    console.error(`[hotmart] ${sale.invoice_id} Supabase inacessível:`, e instanceof Error ? e.message : e);
+    return { status: 503, payload: { ok: false, error: "banco de vendas indisponível" } };
+  }
+  console.log(`[hotmart] ${sale.invoice_id} → salvo`);
   return { status: 200, payload: { ok: true, id: sale.invoice_id } };
 }
 

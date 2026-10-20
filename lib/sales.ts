@@ -1,10 +1,15 @@
-// Server-side reader for Hotmart sales stored in Supabase, with aggregations
-// for the dashboard (by day, by ticket value, by campaign/creative via UTM).
+// Server-side reader for Hotmart sales, with aggregations for the dashboard (by
+// day, by ticket value, by campaign/creative via UTM). Duas fontes, juntadas pela
+// transação: o histórico importado da planilha (lib/hotmart-history.json, sem dados
+// pessoais — gerado por scripts/hotmart-history.py) e o webhook gravado no Supabase.
+// O webhook vence (status mais recente, ex.: estorno depois da planilha).
 import { unstable_cache } from "next/cache";
 import { productFilter, PRODUCTS, isBaseProduct, CODED_FILTER } from "./config";
+import HISTORY from "./hotmart-history.json";
 
 export type SaleRow = {
   invoice_id: string;
+  refunded?: boolean;
   parent_transaction: string | null;
   order_bump: boolean;
   sale_date: string;
@@ -102,8 +107,42 @@ function mergeOrderBumps(rows: SaleRow[]): SaleRow[] {
   return out;
 }
 
+const HISTORY_SALES = (HISTORY as { sales: SaleRow[] }).sales;
+
+// Planilha + webhook no período; mesma transação nos dois → vale o webhook. Venda
+// estornada no webhook some mesmo que a planilha diga "completo".
+async function salesInRange(from: string, to: string): Promise<SaleRow[] | null> {
+  const [hook, reversed] = await Promise.all([fetchAllSales(from, to), fetchReversedIds()]);
+  const byId = new Map<string, SaleRow>();
+  for (const r of HISTORY_SALES) {
+    if (r.sale_date >= from && r.sale_date <= to && !r.refunded && r.gross_value > 0) byId.set(r.invoice_id, r);
+  }
+  for (const r of hook ?? []) byId.set(r.invoice_id, r);
+  for (const id of reversed) byId.delete(id);
+  if (!hook && !HISTORY_SALES.length) return null;
+  return [...byId.values()];
+}
+
+// Transações estornadas/canceladas recebidas pelo webhook (para tirar da planilha).
+async function fetchReversedIdsRaw(): Promise<string[]> {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return [];
+  try {
+    const res = await fetch(`${url}/rest/v1/hotmart_sales?select=invoice_id&refunded=eq.true`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(8_000),
+    });
+    return res.ok ? ((await res.json()) as { invoice_id: string }[]).map((r) => r.invoice_id) : [];
+  } catch {
+    return [];
+  }
+}
+const fetchReversedIds = unstable_cache(fetchReversedIdsRaw, ["hotmart-reversed"], { revalidate: 60 });
+
 export async function getSalesData(from: string, to: string, campaign?: string, product?: string): Promise<SalesData> {
-  const fetched = await fetchAllSales(from, to);
+  const fetched = await salesInRange(from, to);
   const allRaw = fetched && mergeOrderBumps(fetched);
   if (!allRaw) return { available: false, total: 0, gross: 0, net: 0, avgTicket: 0, tickets: [], byDay: [], byCampaign: new Map(), byCreative: new Map() };
   // Product filter (toggle): venda pertence ao produto se a UTM da campanha casa

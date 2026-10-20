@@ -1,4 +1,4 @@
 [
-  { "key": "gas", "label": "GAS", "pattern": "LT_GAS" },
-  { "key": "mcro", "label": "MCRO", "pattern": "LT_MCRO" }
+  { "key": "gas", "label": "GAS", "pattern": "LT_GAS", "productName": "Guia da Avaliação Segura" },
+  { "key": "mcro", "label": "MCRO", "pattern": "LT_MCRO", "productName": "Mapa Clínico do Respirador Oral" }
 ]

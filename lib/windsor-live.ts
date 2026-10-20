@@ -34,7 +34,7 @@ async function fetchLive(): Promise<LiveData> {
   url.searchParams.set("date_from", ALL_DATES[0] ?? addDays(brtToday(), -89));
   url.searchParams.set("date_to", brtToday());
   url.searchParams.set("fields", FIELDS.join(","));
-  url.searchParams.set("select_accounts", META_ACCOUNT_IDS.map((id) => `facebook__${id}`).join(","));
+  url.searchParams.set("select_accounts", META_ACCOUNT_IDS.join(","));
   const res = await fetch(url.toString(), { cache: "no-store", signal: AbortSignal.timeout(45_000) });
   if (!res.ok) throw new Error(`Windsor HTTP ${res.status}`);
   const json = await res.json();

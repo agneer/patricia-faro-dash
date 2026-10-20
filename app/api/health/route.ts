@@ -44,7 +44,7 @@ export async function GET() {
       ? probe(`${sbUrl}/rest/v1/eduzz_sales?select=invoice_id&limit=1`, { headers: { apikey: sbKey, Authorization: `Bearer ${sbKey}` } })
       : null,
     wKey
-      ? probe(`https://connectors.windsor.ai/facebook?api_key=${encodeURIComponent(wKey)}&date_from=${day}&date_to=${day}&fields=account_id,spend&select_accounts=facebook__939669440392208`)
+      ? probe(`https://connectors.windsor.ai/facebook?api_key=${encodeURIComponent(wKey)}&date_from=${day}&date_to=${day}&fields=account_id,spend&select_accounts=939669440392208`)
       : null,
   ]);
 

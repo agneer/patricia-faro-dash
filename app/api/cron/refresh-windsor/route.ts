@@ -38,7 +38,7 @@ async function fetchWindsor(from: string, to: string): Promise<{ rows: RawRow[];
   url.searchParams.set("date_to", to);
   url.searchParams.set("fields", FIELDS.join(","));
   // Só as contas deste dash — sem isso o Windsor devolve todas as contas da agência.
-  url.searchParams.set("select_accounts", META_ACCOUNT_IDS.map((id) => `facebook__${id}`).join(","));
+  url.searchParams.set("select_accounts", META_ACCOUNT_IDS.join(","));
   const res = await fetch(url.toString(), { cache: "no-store", signal: AbortSignal.timeout(280_000) });
   if (!res.ok) throw new Error(`Windsor ${res.status}`);
   const json = await res.json();

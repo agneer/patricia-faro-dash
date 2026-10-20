@@ -9,11 +9,11 @@ export const CONFIG = {
   // Branding
   appName: process.env.APP_NAME ?? "Patrícia Faro · Low Ticket",
   appDescription: process.env.APP_DESCRIPTION ?? "Painel de performance Meta Ads + vendas Hotmart",
-  scopeLabel: process.env.SCOPE_LABEL ?? "LOW TICKET · GAS", // chip showing the campaign scope
+  scopeLabel: process.env.SCOPE_LABEL ?? "LOW TICKET · GAS + MCRO", // chip showing the campaign scope
 
   // Meta Ads account + which campaigns belong to this dashboard
   metaAccountId: process.env.META_ACCOUNT_ID ?? "939669440392208",
-  campaignFilterSource: process.env.CAMPAIGN_FILTER ?? "LT_GAS",
+  campaignFilterSource: process.env.CAMPAIGN_FILTER ?? "LT_GAS|LT_MCRO",
 
   // Targets / rates
   cpaTarget: Number(process.env.CPA_TARGET ?? 90),

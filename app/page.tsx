@@ -11,7 +11,7 @@ import { FilterBar } from "@/components/FilterBar";
 import { TaxToggle } from "@/components/TaxToggle";
 import { CampaignFilter } from "@/components/CampaignFilter";
 import { ProductToggle } from "@/components/ProductToggle";
-import { CONFIG, PRODUCTS, MULTI_PRODUCT } from "@/lib/config";
+import { CONFIG, PRODUCTS, MULTI_PRODUCT, META_ACCOUNT_IDS } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -264,7 +264,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
       </section>
 
       <footer className="mt-8 text-center text-[11px] text-[var(--muted-2)]">
-        Dados via conector Windsor.ai · {d.account.connectorLabel} · conta {d.account.name} ({d.account.id})
+        Dados via conector Windsor.ai · {d.account.connectorLabel} · conta {d.account.name} ({META_ACCOUNT_IDS.join(", ")})
         {!d.live && " · defina WINDSOR_API_KEY para atualização ao vivo"}
         <span className="mx-1.5">·</span>
         <a href="/admin" className="underline-offset-2 transition-colors hover:text-[var(--muted)] hover:underline">⚙️ Admin / Vendas Hotmart</a>

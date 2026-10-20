@@ -1,1 +1,4 @@
-[]
+[
+  { "key": "gas", "label": "GAS", "pattern": "LT_GAS" },
+  { "key": "mcro", "label": "MCRO", "pattern": "LT_MCRO" }
+]

@@ -101,7 +101,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
             <div className="flex items-center gap-2">
               <h1 className="text-[19px] font-semibold leading-none tracking-tight">{CONFIG.appName}</h1>
               <span className="rounded-full px-2 py-[3px] text-[10px] font-semibold uppercase tracking-wide" style={{ color: d.live ? "var(--emerald)" : "var(--amber)", background: `color-mix(in srgb, ${d.live ? "var(--emerald)" : "var(--amber)"} 14%, transparent)` }}>
-                {d.live ? "● Gasto ao vivo (Meta)" : "● Snapshot diário"}
+                {d.live ? "● Gasto ao vivo (Windsor)" : "● Snapshot diário"}
               </span>
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-[var(--muted)]">

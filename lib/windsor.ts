@@ -1,7 +1,7 @@
 import { ACCOUNT, CREATIVES, ALL_DATES, type DailyRow, type CreativeRow } from "./snapshot";
 import { resolvePostLinks } from "./creative-posts";
 import { CONFIG, CAMPAIGN_FILTER, productFilter, isBaseProduct, CODED_FILTER } from "./config";
-import { getMetaCreatives } from "./meta-live";
+import { getLiveData } from "./windsor-live";
 import MANUAL_PURCHASES from "./manual-purchases.json";
 
 type PurchaseOverride = { date: string; ad: string; purchases: number; value: number };
@@ -325,14 +325,13 @@ export async function getDashboardData(params: { preset?: string; from?: string;
   const withTax = !!params.tax;
   const product = params.product && (productFilter(params.product) || isBaseProduct(params.product)) ? params.product : "geral";
 
-  // Fonte principal = Meta Marketing API ao vivo (todo o histórico, cache 2 min).
-  // O snapshot (dataset.json) é só reserva para os dias/campanhas que a Meta não
-  // devolver (sem token, ou janela que falhou). `lite` (período anterior, só KPIs de
+  // Fonte principal = Windsor ao vivo (todo o histórico, só a conta deste dash,
+  // cache 10 min). O snapshot (dataset.json) é só reserva para os dias/campanhas que
+  // o Windsor não devolver (sem chave, ou falha). `lite` (período anterior, só KPIs de
   // comparação) reusa a mesma consulta cacheada e pula só os links de post.
-  const [liveRows, postLinks] = await Promise.all([
-    getMetaCreatives(),
-    params.lite ? Promise.resolve<Record<string, string>>({}) : resolvePostLinks(),
-  ]);
+  const live = await getLiveData();
+  const liveRows = live.rows;
+  const postLinks = params.lite ? {} : resolvePostLinks(live.links);
   const hasLive = liveRows.length > 0;
   const liveDates = new Set(liveRows.map((c) => c.date));
 

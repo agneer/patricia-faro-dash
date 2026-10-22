@@ -124,6 +124,12 @@ export async function ingestWebhook(body: unknown): Promise<{ status: number; pa
     console.log(`[hotmart] evento ignorado: ${String(at(body, "event") ?? "?")}`);
     return { status: 200, payload: { ok: true, ignored: true } };
   }
+  // "Enviar teste" da Hotmart: produto fictício (R$ 1.500, transação fixa). Só registra
+  // no log que o webhook está funcionando — não vira venda no dash.
+  if (/test postback/i.test(sale.product_name ?? "") || sale.invoice_id === "HP16015479281022") {
+    console.log(`[hotmart] teste da Hotmart recebido ✓ (${sale.last_event}) — não gravado`);
+    return { status: 200, payload: { ok: true, test: true } };
+  }
   // Loga o que chegou ANTES de gravar (sem dados do comprador), pra conferir UTMs
   // mesmo se o banco falhar. Chaves de origem/rastreio mostram onde a Hotmart põe as UTMs.
   const origin = at(body, "data", "purchase", "origin");

@@ -51,3 +51,20 @@ create index if not exists hotmart_sales_utm_content_idx  on public.hotmart_sale
 -- Só a service-role key (servidor) mexe na tabela; anon bloqueado.
 alter table public.hotmart_sales enable row level security;
 -- (sem policies = sem acesso anon/public; service role ignora RLS)
+
+-- Estorno é definitivo: um "aprovado"/"completo" que chegue depois (ou junto — a Hotmart
+-- dispara vários eventos ao mesmo tempo) não pode reabrir a venda. A regra fica no
+-- banco porque só aqui ela é atômica: upserts simultâneos da mesma transação se
+-- enfileiram na trava da linha e cada um vê o estado já gravado pelo anterior.
+create or replace function public.hotmart_keep_refund() returns trigger
+language plpgsql as $$
+begin
+  if old.refunded and not new.refunded then
+    return old;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists hotmart_keep_refund on public.hotmart_sales;
+create trigger hotmart_keep_refund before update on public.hotmart_sales
+  for each row execute function public.hotmart_keep_refund();

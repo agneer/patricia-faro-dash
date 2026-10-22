@@ -3,7 +3,7 @@
 
 Uso:  python3 -I scripts/hotmart-history.py "<caminho do export>"
 
-Guarda só transação, status, data, produto e valores. O e-mail do comprador é usado
+Guarda só transação, status, data, produto e valores (líquido = bruto − taxas da Hotmart). O e-mail do comprador é usado
 APENAS em memória para ligar um upsell (UPSELL_RE) à compra principal do mesmo
 comprador — vira `parent_transaction` e o upsell soma na venda principal no dash
 (como order bump), sem contar como venda a mais. Nada pessoal vai para o arquivo.
@@ -96,7 +96,10 @@ def main(path):
         if not date:
             continue
         gross = money(g(r, "Faturamento bruto (sem impostos)") or g(r, "Valor de compra sem impostos"))
-        net = money(g(r, "Faturamento líquido do(a) Produtor(a)") or g(r, "Faturamento líquido"))
+        # Líquido = bruto − taxas da Hotmart (processamento, streaming, outras). Comissão de
+        # coprodutor/afiliado NÃO sai: é faturamento do negócio, só dividido depois.
+        fees = sum(money(g(r, c)) for c in ("Taxa de processamento", "Taxa de streaming", "Outras Taxas"))
+        net = round(gross - fees, 2) if fees else money(g(r, "Faturamento líquido do(a) Produtor(a)") or g(r, "Faturamento líquido"))
         parent = g(r, "Transação do Produto Principal")
         sales.append({
             "invoice_id": tid,

@@ -71,7 +71,9 @@ export function saleFromWebhook(body: unknown): HotmartSale | null {
     .map((k) => p?.[k] as Json | undefined)
     .find((x) => x?.value != null);
   const commissions = (at(data, "commissions") as Json[] | undefined) ?? [];
-  const producer = commissions.find((c) => String(c.source).toUpperCase() === "PRODUCER");
+  // Líquido = valor − comissão da plataforma (MARKETPLACE). Coprodutor/afiliado não saem:
+  // é faturamento do negócio, só dividido depois.
+  const marketplace = commissions.filter((c) => String(c.source).toUpperCase() === "MARKETPLACE");
   const gross = num(price?.value);
   const isBump = !!at(p, "order_bump", "is_order_bump");
 
@@ -82,7 +84,7 @@ export function saleFromWebhook(body: unknown): HotmartSale | null {
     refunded,
     order_bump: isBump,
     gross_value: gross,
-    net_value: producer ? num(producer.value) : gross,
+    net_value: Math.round((gross - marketplace.reduce((t, c) => t + num(c.value), 0)) * 100) / 100,
     currency: str(price?.currency_value)?.toUpperCase() ?? "BRL",
     created_at: iso(p?.order_date),
     paid_at: iso(p?.approved_date) ?? iso(p?.order_date) ?? iso(at(body, "creation_date")),

@@ -13,7 +13,7 @@ create table if not exists public.hotmart_sales (
   refunded           boolean not null default false,
   order_bump         boolean not null default false,
   gross_value        numeric(12,2) not null default 0,  -- valor da compra (data.purchase.price)
-  net_value          numeric(12,2) not null default 0,  -- comissão do produtor (data.commissions PRODUCER)
+  net_value          numeric(12,2) not null default 0,  -- valor − comissão da plataforma (MARKETPLACE)
   currency           text default 'BRL',
 
   created_at         timestamptz,                -- data.purchase.order_date

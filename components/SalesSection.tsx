@@ -46,7 +46,7 @@ export function SalesSection({
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
         <MiniStat label="Vendas" value={num(total)} hint="pagas no período" />
         <MiniStat label="Fat. Bruto" value={brl(gross)} hint="valor total das vendas" />
-        <MiniStat label="Fat. Líquido" value={brl(net)} hint="comissão do produtor" />
+        <MiniStat label="Fat. Líquido" value={brl(net)} hint="bruto − taxas Hotmart" />
         <MiniStat label="Ticket médio" value={brl(avgTicket)} hint="bruto / vendas" />
         <MiniStat label="CPA real" value={total ? brl(cpa) : "—"} hint={withTax ? "gasto c/ imp ÷ vendas" : "gasto ÷ vendas"} />
         <MiniStat label="ROAS real" value={spend ? `${num(roasBruto, 2)}x` : "—"} hint={`líq. ${num(roasLiq, 2)}x`} />
